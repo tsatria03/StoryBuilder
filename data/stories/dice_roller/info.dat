@@ -1,0 +1,69 @@
+title Dice Roller
+wait 500
+
+function main
+
+text "Welcome to the tabletop dice roller."
+
+array dice_types d2,d4,d6,d8,d10,d12,d20,d30,d50,d100
+range dice_counts 1 10
+range mod_values -10 10
+remove mod_values 0
+
+while true
+
+    // Choose dice type
+    menu dice_types "Choose the type of dice to roll."
+    set sides <menu_choice>
+
+    // Choose count
+    menu dice_counts "How many dice do you want to roll?"
+    set count <menu_choice>
+
+    set modifier 0
+
+    // Modifier choice
+    choice "Do you want to use a modifier?"
+        "Yes" call choosemodifier
+        "No" set modifier 0
+    endchoice
+
+    // Rolling loop
+    while true
+
+        say "Rolling dice..."
+
+        // Build roll expression properly
+        if modifier > 0
+            roll <count><sides>+<modifier>
+        elseif modifier < 0
+            roll <count><sides><modifier>
+        else
+            roll <count><sides>
+        endif
+
+        // What next
+        choice "What would you like to do?"
+            "Roll again" continue
+            "Change dice" break
+            "Exit dice roller" end
+        endchoice
+
+    endwhile
+
+endwhile
+
+return
+endfunction
+
+
+function choosemodifier
+
+    menu mod_values "Choose a modifier."
+    set modifier <menu_choice>
+
+    return
+endfunction
+
+
+call main

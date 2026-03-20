@@ -1,0 +1,77 @@
+title Password Generator
+wait 500
+
+text Welcome to password generator.
+
+function main
+
+array pass_types Numbers,Letters,Numbers+Letters,Symbols,Numbers+Symbols,Letters+Symbols,All
+
+while true
+
+    menu pass_types "Choose password type."
+    set passtype <menu_choice>
+
+    write passlen "Enter password length:"
+
+    if passlen == ""
+        continue
+    endif
+
+    if passlen <= 0
+        continue
+    endif
+
+    while true
+
+        call genpassword
+
+        choice "What would you like to do?"
+            "Generate again" continue
+            "Change settings" break
+            "Exit generator" end
+        endchoice
+
+    endwhile
+
+endwhile
+
+return
+endfunction
+
+
+function genpassword
+
+    if passtype == "Numbers"
+        genpass num <passlen>
+        return
+
+    elseif passtype == "Letters"
+        genpass let+LET <passlen>
+        return
+
+    elseif passtype == "Numbers+Letters"
+        genpass num+let <passlen>
+        return
+
+    elseif passtype == "Symbols"
+        genpass sim <passlen>
+        return
+
+    elseif passtype == "Numbers+Symbols"
+        genpass num+sim <passlen>
+        return
+
+    elseif passtype == "Letters+Symbols"
+        genpass let+sim <passlen>
+        return
+
+    elseif passtype == "All"
+        genpass num+let+LET+sim <passlen>
+        return
+    endif
+
+return
+endfunction
+
+call main

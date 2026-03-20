@@ -1,0 +1,2 @@
+A huge thanks goes out to the origenal developers who were behind the first basic iteration of this project. This app was purely insperational, and deserves to be recognize for the time and effert it took to get it to be where it is now.
+I wouldn't of done it without the help and support from you guys, and especially chat gpt for creating the core foundation of this project.

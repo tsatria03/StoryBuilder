@@ -1,0 +1,44 @@
+class story_parser
+{
+string[] lines;
+int index=0;
+dictionary labels;
+void load(string filepath)
+{
+lines=clean_lines(filepath);
+index=0;
+labels.delete_all();
+for(uint i=0;i<lines.length();i++)
+{
+string line=lines[i];
+string[] tokens=parse_story_tokens(line);
+if(tokens.length()>1 && tokens[0].lower()=="label")
+{
+labels[tokens[1]]=i;
+}
+}
+}
+bool goto_label(string name)
+{
+if(labels.exists(name))
+{
+index=int(labels[name]);
+return true;
+}
+return false;
+}
+bool finished()
+{
+return index>=int(lines.length());
+}
+string get_line()
+{
+if(finished())
+return "";
+return lines[index];
+}
+void next()
+{
+index++;
+}
+}

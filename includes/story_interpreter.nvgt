@@ -1,0 +1,2270 @@
+class story_interpreter
+{
+story_variables@ vars;
+story_parser@ parser;
+
+string write_cancel = "exit";
+string write_chars = "";
+bool write_use_only = false;
+string write_message = "";
+bool write_mode_enabled = false;
+
+bool inline_return_mode = false;
+string inline_return_value = "";
+string last_return_value;
+bool has_return_value = false;
+
+int playerhp;
+int playermaxhp;
+int playerxp;
+int playerlevel;
+int lastroll;
+int lastrollcount;
+int lastrollsides;
+int lastrollmodifier;
+
+bool combatwin;
+bool skip_advance = false;
+
+string lastspin;
+string lastflip;
+string foreach_var;
+string foreach_array;
+string dlg_buffer = "";
+string[] worldmap;
+
+array<bool> continue_stack;
+array<bool> break_stack;
+array<bool> if_result_stack;
+array<string> callstack;
+array<int> while_stack;
+array<dictionary> localstack;
+
+dictionary loopvars;
+dictionary loopstart;
+dictionary loopend;
+dictionary arrays;
+dictionary journal;
+dictionary inv;
+dictionary quests;
+dictionary functions;
+dictionary question_answers;
+
+story_interpreter(story_variables@ v, story_parser@ p)
+{
+@vars=v;
+@parser=p;
+}
+
+bool evaluate_condition(string condition)
+{
+    string[] tokens = parse_story_tokens(condition);
+    if(tokens.length() < 3)
+        return false;
+    bool first_condition = true;
+    bool final_result = false;
+    bool use_or = false;
+    while(tokens.length() > 0)
+    {
+        bool result = false;
+        string varname = tokens[0];
+        tokens.remove_at(0);
+        if(varname == "has")
+        {
+            if(tokens.length() < 1)
+                return false;
+            string item = tokens[0];
+            tokens.remove_at(0);
+            result = inv.exists(item);
+        }
+        else if(varname == "rand")
+        {
+            if(tokens.length() < 4)
+                return false;
+            int minv = int(string_to_number(tokens[0]));
+            int maxv = int(string_to_number(tokens[1]));
+            tokens.remove_at(0);
+            tokens.remove_at(0);
+            string op = tokens[0];
+            tokens.remove_at(0);
+            string value = tokens[0];
+            tokens.remove_at(0);
+            double a = random(minv, maxv);
+            double b = string_to_number(value);
+            if(op=="==") result=(a==b);
+            else if(op=="!=") result=(a!=b);
+            else if(op==">") result=(a>b);
+            else if(op=="<") result=(a<b);
+            else if(op==">=") result=(a>=b);
+            else if(op=="<=") result=(a<=b);
+        }
+        else
+        {
+            if(tokens.length() < 2)
+                return false;
+            string op = tokens[0];
+            tokens.remove_at(0);
+            string value = tokens[0];
+            tokens.remove_at(0);
+            string varvalue = "";
+            if(vars.exists(varname))
+                varvalue = vars.get(varname);
+            varvalue = strip_quotes(varvalue);
+            value = strip_quotes(value);
+            bool var_is_num = varvalue.is_digits();
+            bool val_is_num = value.is_digits();
+            if(var_is_num && val_is_num)
+            {
+                double a = string_to_number(varvalue);
+                double b = string_to_number(value);
+                if(op=="==") result=(a==b);
+                else if(op=="!=") result=(a!=b);
+                else if(op==">") result=(a>b);
+                else if(op=="<") result=(a<b);
+                else if(op==">=") result=(a>=b);
+                else if(op=="<=") result=(a<=b);
+            }
+            else
+            {
+                if(op=="==") result=(varvalue == value);
+                else if(op=="!=") result=(varvalue != value);
+            }
+        }
+        if(first_condition)
+        {
+            final_result = result;
+            first_condition = false;
+        }
+        else if(use_or)
+        {
+            final_result = final_result || result;
+        }
+        else
+        {
+            final_result = final_result && result;
+        }
+        if(tokens.length() > 0)
+        {
+            string logic = tokens[0].lower();
+            if(logic=="and" || logic=="&&")
+            {
+                use_or = false;
+                tokens.remove_at(0);
+                continue;
+            }
+            if(logic=="or" || logic=="||")
+            {
+                use_or = true;
+                tokens.remove_at(0);
+                continue;
+            }
+        }
+        break;
+    }
+    return final_result;
+}
+
+dictionary@ get_locals()
+{
+if(localstack.length()>0)
+return @localstack[localstack.length()-1];
+return null;
+}
+int run_block(int startline, int endline)
+{
+    int pc = startline;
+    while(pc < endline)
+    {
+        if(trim(lines[pc]) == "")
+        {
+            pc++;
+            continue;
+        }
+        int saved_line = current_line;
+        bool saved_skip = skip_advance;
+        current_line = pc;
+        bool cont = execute(lines[pc]);
+        int top = continue_stack.length()-1;
+        if(top >= 0)
+        {
+            if(break_stack[top])
+            {
+                current_line = saved_line;
+                skip_advance = saved_skip;
+                return 2;
+            }
+            if(continue_stack[top])
+            {
+                current_line = saved_line;
+                skip_advance = saved_skip;
+                return 1;
+            }
+        }
+        int nextpc;
+        if(skip_advance)
+            nextpc = current_line;
+        else
+            nextpc = pc + 1;
+        current_line = saved_line;
+        skip_advance = saved_skip;
+        if(!cont)
+            return 0;
+        pc = nextpc;
+    }
+    return 0;
+}
+
+void flush_dialog()
+{
+if(dlg_buffer=="")
+return;
+dlgmessage(dlg_buffer);
+dlg_buffer="";
+}
+bool execute(string line)
+{
+    if(in_block_comment)
+    {
+        int end = line.find("*/");
+        if(end != -1)
+        {
+            line = line.substr(end + 2);
+            in_block_comment = false;
+        }
+        else
+        {
+            return true;
+        }
+    }
+    int block_start = line.find("/*");
+    if(block_start != -1)
+    {
+        int block_end = line.find("*/", block_start + 2);
+        if(block_end != -1)
+        {
+            line = line.substr(0, block_start) + line.substr(block_end + 2);
+        }
+        else
+        {
+            in_block_comment = true;
+            line = line.substr(0, block_start);
+        }
+    }
+    int cpos = line.find("//");
+    if(cpos != -1)
+        line = line.substr(0, cpos);
+    cpos = line.find("#");
+    if(cpos != -1)
+        line = line.substr(0, cpos);
+    cpos = line.find(";");
+    if(cpos != -1)
+        line = line.substr(0, cpos);
+    line = vars.replace_vars(line, get_locals());
+    line = process_random(line);
+    line = trim(line);
+    if(line == "")
+        return true;
+    string[] tokens = parse_story_tokens(line);
+    if(tokens.length() == 0)
+        return true;
+    string cmd = tokens[0].lower();
+    tokens.remove_at(0);
+bool needs_flush=(cmd=="goto" || cmd=="gotoif" || cmd=="call" || cmd=="return" || cmd=="say" || cmd=="choice" || cmd=="menu" || cmd=="question" || cmd=="roll" || cmd=="flip" || cmd=="spin" || cmd=="genpass" || cmd=="map" || cmd=="worldmap" || cmd=="write" || cmd=="combat" || cmd=="cutplay" || cmd=="play" || cmd=="mus" || cmd=="amb" || cmd=="end" || cmd=="exit");
+if(needs_flush)
+flush_dialog();
+if(cmd!="text")
+flush_dialog();
+if(cmd=="text")
+{
+string msg=string_join(tokens," ");
+msg=vars.replace_vars(msg, get_locals());
+msg=process_random(msg);
+msg=process_math(msg);
+if(dlg_buffer=="")
+dlg_buffer=msg;
+else
+dlg_buffer+="\r\n"+msg;
+return true;
+}
+if(cmd=="textsound")
+{
+if(tokens.length()==0)
+{
+dlgsound=true;
+return true;
+}
+string state=tokens[0].lower();
+if(state=="true" || state=="on" || state=="1")
+dlgsound=true;
+else if(state=="false" || state=="off" || state=="0")
+dlgsound=false;
+return true;
+}
+if(cmd=="say")
+{
+string msg=string_join(tokens," ");
+msg=vars.replace_vars(msg, get_locals());
+msg=process_random(msg);
+msg=process_math(msg);
+speak(msg);
+return true;
+}
+if(cmd=="return")
+{
+    string value = "";
+    if(tokens.length() > 0)
+    {
+        value = string_join(tokens, " ");
+        value = vars.replace_vars(value, get_locals());
+        if(value.starts_with("call "))
+        {
+            string[] ctokens = parse_story_tokens(value);
+            if(ctokens.length() >= 2)
+            {
+                string fname = ctokens[1];
+                if(functions.exists(fname))
+                {
+                    int target = string_to_int(string(functions[fname]));
+                    if(target >= 0 && target < int(lines.length()))
+                    {
+                        dictionary locals;
+                        localstack.insert_last(locals);
+                        string[] ftokens = parse_story_tokens(lines[target]);
+                        uint maxargs = ctokens.length() > 2 ? ctokens.length()-2 : 0;
+                        uint maxparams = ftokens.length() > 2 ? ftokens.length()-2 : 0;
+                        uint count = maxargs < maxparams ? maxargs : maxparams;
+                        for(uint i=0; i<count; i++)
+                        {
+                            localstack[localstack.length()-1].set(ftokens[i+2], ctokens[i+2]);
+                        }
+                        int endline = find_endfunction(target);
+                        inline_return_mode = true;
+                        inline_return_value = "";
+                        if(endline > target)
+                            run_block(target + 1, endline);
+                        inline_return_mode = false;
+                        value = inline_return_value;
+                        if(localstack.length() > 0)
+                            localstack.remove_last();
+                    }
+                    else
+                    {
+                        value = "";
+                    }
+                }
+                else
+                {
+                    value = "";
+                }
+            }
+        }
+        else
+        {
+            value = eval_expr(value);
+        }
+    }
+    if(inline_return_mode)
+    {
+        inline_return_value = value;
+        return false;
+    }
+    if(callstack.length()==0)
+        return true;
+    vars.set("lastreturn", value);
+    if(localstack.length() > 0)
+        localstack.remove_last();
+    current_line = string_to_int(callstack[callstack.length()-1]);
+    callstack.remove_last();
+    skip_advance = true;
+    return true;
+}
+if(cmd=="call")
+{
+    if(tokens.length()<1)
+        return true;
+    string fname = tokens[0];
+    tokens.remove_at(0);
+    if(!functions.exists(fname))
+        return true;
+    dictionary locals;
+    localstack.insert_last(locals);
+    callstack.insert_last(string(current_line + 1));
+    int target = string_to_int(string(functions[fname]));
+    if(target < 0 || target >= int(lines.length()))
+        return true;
+    string[] ftokens = parse_story_tokens(lines[target]);
+    for(uint i=0;i<tokens.length();i++)
+    {
+        if(i+2 < ftokens.length())
+        {
+            string argname = ftokens[i+2];
+            localstack[localstack.length()-1].set(argname, tokens[i]);
+        }
+    }
+    current_line = target + 1;
+    skip_advance = true;
+    return true;
+}
+if(cmd=="length")
+{
+    if(tokens.length()<2)
+        return true;
+    string target=tokens[0];
+    string resultvar=tokens[1];
+    string[] arr;
+    if(arrays.get(target, arr))
+    {
+        vars.set(resultvar, string(arr.length()));
+        return true;
+    }
+    if(vars.exists(target))
+    {
+        string val=vars.get(target);
+        vars.set(resultvar, string(val.length()));
+        return true;
+    }
+    vars.set(resultvar, string(target.length()));
+    return true;
+}
+if(cmd=="menu")
+{
+    last_menu_line = current_line;
+    if(tokens.length()<1)
+        return true;
+    string arrname=tokens[0];
+    tokens.remove_at(0);
+    string prompt="Choose an option.";
+    if(tokens.length()>0)
+        prompt=string_join(tokens," ");
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    setupmenu(false);
+    for(uint i=0;i<arr.length();i++)
+        m.add_item(arr[i]);
+    m.intro_text=prompt;
+    int result=m.run();
+    if(result<=0 || result>arr.length())
+    {
+        vars.set("menuindex","0");
+        vars.set("menu_choice","");
+        return true;
+    }
+    vars.set("menuindex",string(result));
+    string choice = arr[result-1];
+    vars.set("menu_choice", "\"" + choice + "\"");
+    return true;
+}
+if(cmd=="menuindex")
+{
+    vars.set("menuindex",string(menuindex));
+    return true;
+}
+if(cmd=="menucom")
+{
+    if(tokens.length()<1)
+        return true;
+    string arrname=tokens[0];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    if(!vars.exists("menuindex"))
+        return true;
+    int idx=string_to_int(vars.get("menuindex"));
+    if(idx<=0 || idx>int(arr.length()))
+        return true;
+    string cmdline=arr[idx-1];
+    string[] cmds=string_split(cmdline,";",true);
+    for(uint i=0;i<cmds.length();i++)
+    {
+        string c=cmds[i];
+        if(c!="")
+            execute(c);
+    }
+    return true;
+}
+if(cmd=="push")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    tokens.remove_at(0);
+    string value=string_join(tokens," ");
+    string[] arr;
+    arrays.get(arrname, arr);
+    arr.insert_last(value);
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="pop")
+{
+    if(tokens.length()<1)
+        return true;
+    string arrname=tokens[0];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    if(arr.length()==0)
+        return true;
+    arr.remove_at(arr.length()-1);
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="shuffle")
+{
+    if(tokens.length()<1)
+        return true;
+    string arrname=tokens[0];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    for(uint i=0;i<arr.length();i++)
+    {
+        int j=random(0, arr.length()-1);
+        string tmp=arr[i];
+        arr[i]=arr[j];
+        arr[j]=tmp;
+    }
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="pick")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    string varname=tokens[1];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    if(arr.length()==0)
+        return true;
+    int r=random(0, arr.length()-1);
+    vars.set(varname, arr[r]);
+    return true;
+}
+if(cmd=="remove")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    tokens.remove_at(0);
+    string value=string_join(tokens," ");
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    for(int i=int(arr.length())-1;i>=0;i--)
+    {
+        if(arr[i]==value)
+            arr.remove_at(i);
+    }
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="remove_first")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    tokens.remove_at(0);
+    string value=string_join(tokens," ");
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    for(uint i=0;i<arr.length();i++)
+    {
+        if(arr[i]==value)
+        {
+            arr.remove_at(i);
+            break;
+        }
+    }
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="remove_last")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    tokens.remove_at(0);
+    string value=string_join(tokens," ");
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    for(int i=int(arr.length())-1;i>=0;i--)
+    {
+        if(arr[i]==value)
+        {
+            arr.remove_at(i);
+            break;
+        }
+    }
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="join")
+{
+    if(tokens.length()<3)
+        return true;
+    string arrname=tokens[0];
+    string separator=tokens[1];
+    string resultvar=tokens[2];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    string result="";
+    for(uint i=0;i<arr.length();i++)
+    {
+        if(i>0)
+            result+=separator;
+        result+=arr[i];
+    }
+    vars.set(resultvar, result);
+    return true;
+}
+if(cmd=="filter")
+{
+    if(tokens.length()<3)
+        return true;
+    string source=tokens[0];
+    string value=tokens[1];
+    string result=tokens[2];
+    string[] src;
+    if(!arrays.get(source, src))
+        return true;
+    string[] result_arr;
+    for(uint i=0;i<src.length();i++)
+    {
+        if(src[i].find(value)!=-1)
+            result_arr.insert_last(src[i]);
+    }
+    arrays.set(result, result_arr);
+    return true;
+}
+if(cmd=="sort")
+{
+    if(tokens.length()<1)
+        return true;
+    string arrname=tokens[0];
+    string mode="alpha";
+    if(tokens.length()>1)
+        mode=tokens[1].lower();
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    if(mode=="natural")
+        arr.sort(natural_number_sort);
+    else
+        arr.sort_ascending();
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="range")
+{
+    if(tokens.length()<3)
+        return true;
+    string arrname=tokens[0];
+    int start=int(string_to_number(tokens[1]));
+    int end=int(string_to_number(tokens[2]));
+    int step=1;
+    if(tokens.length()>3)
+        step=int(string_to_number(tokens[3]));
+    if(step==0)
+        step=1;
+    string[] arr;
+    if(start<=end)
+    {
+        for(int i=start;i<=end;i+=step)
+            arr.insert_last(string(i));
+    }
+    else
+    {
+        for(int i=start;i>=end;i-=step)
+            arr.insert_last(string(i));
+    }
+    arrays.set(arrname, arr);
+    return true;
+}
+if(cmd=="wait")
+{
+    if(tokens.length()>0)
+    {
+        string expr = string_join(tokens, " ");
+        expr = eval_expr(expr);
+        int ms = int(string_to_number(expr));
+        if(ms < 0)
+            ms = 0;
+        wait(ms);
+    }
+    return true;
+}
+if(cmd=="array")
+{
+    if(tokens.length()<2)
+        return true;
+    string name=tokens[0];
+    tokens.remove_at(0);
+    string delimiter="";
+    if(tokens.length()>1)
+    {
+        delimiter=tokens[tokens.length()-1];
+        tokens.remove_last();
+    }
+    string data=string_join(tokens," ");
+    string[] items;
+    if(delimiter!="")
+    {
+        items=string_split(data,delimiter,true);
+    }
+    else
+    {
+        if(data.find(",")!=-1)
+            items=string_split(data,",",true);
+        else
+            items=string_split(data," ",true);
+    }
+    for(uint i=0;i<items.length();i++)
+        items[i]=trim(items[i]);
+    arrays.set(name,items);
+    return true;
+}
+if(cmd=="randitem")
+{
+    if(tokens.length()<2)
+        return true;
+    string arrname=tokens[0];
+    string varname=tokens[1];
+    if(!arrays.exists(arrname))
+        return true;
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    if(arr.length()==0)
+        return true;
+    int i=random(0,arr.length()-1);
+    vars.set(varname,arr[i]);
+    return true;
+}
+if(cmd=="flip")
+{
+string result="";
+dlgplay(get_sound("misc/*coinflip*"),false);
+int r=random(1,2);
+if(r==1)
+result="Heads";
+else
+result="Tails";
+vars.set("lastflip", result);
+dlgmessage("It lands on "+result+".");
+return true;
+}
+if(cmd=="roll")
+{
+if(tokens.length()<1)
+return true;
+string expr=tokens[0];
+int dice=1;
+int sides=6;
+int modifier=0;
+int dpos=expr.find("d");
+if(dpos!=-1)
+{
+dice=int(string_to_number(expr.substr(0,dpos)));
+}
+string remain=expr.substr(dpos+1);
+int pluspos=remain.find("+");
+int minuspos=remain.find("-");
+if(pluspos!=-1)
+{
+sides=int(string_to_number(remain.substr(0,pluspos)));
+modifier=int(string_to_number(remain.substr(pluspos+1)));
+}
+else if(minuspos!=-1)
+{
+sides=int(string_to_number(remain.substr(0,minuspos)));
+modifier=-int(string_to_number(remain.substr(minuspos+1)));
+}
+else
+{
+sides=int(string_to_number(remain));
+}
+if(dice<1) dice=1;
+if(sides<1) sides=1;
+dlgplay(get_sound("misc/*diceroll*"),false);
+dlgplay(get_sound("misc/*diceland*"),false);
+int total=0;
+string results="The dice show: ";
+for(int i=0;i<dice;i++)
+{
+int r=random(1,sides);
+total+=r;
+results+=string(r);
+if(i<dice-1)
+results+=", ";
+}
+total+=modifier;
+string modtext="";
+if(modifier>0)
+modtext="plus "+string(modifier);
+else if(modifier<0)
+modtext="minus "+string(abs(modifier));
+else
+modtext="zero";
+results+=", with a modifier of "+modtext;
+results+=", for a total score of "+string(total);
+lastroll=total;
+lastrollcount=dice;
+lastrollsides=sides;
+lastrollmodifier=modifier;
+vars.set("lastroll",string(lastroll));
+vars.set("lastrollcount",string(lastrollcount));
+vars.set("lastrollsides",string(lastrollsides));
+vars.set("lastrollmodifier",string(lastrollmodifier));
+dlgmessage(results);
+return true;
+}
+if(cmd=="spin")
+{
+if(tokens.length()<1)
+return true;
+string arrname=tokens[0];
+string[] wheel;
+if(!arrays.get(arrname, wheel))
+return true;
+if(wheel.length()==0)
+return true;
+dictionary args=parse_named_args(tokens,1);
+int delay=int(get_arg_number(args,"speed",40));
+int slowdown=int(get_arg_number(args,"slowdown",20));
+int ticks=int(get_arg_number(args,"ticks",10));
+while(ticks>0)
+{
+    p.play_stationary(get_sound("misc/*wheelspin*"),false);
+    wait(delay);
+    delay+=slowdown;
+    ticks--;
+    if(key_repeating(KEY_ESCAPE))
+        break;
+}
+p.play_stationary(get_sound("misc/*wheelding*"),false);
+int r=random(0,wheel.length()-1);
+string result=wheel[r];
+vars.set("lastspin",result);
+dlgmessage("The wheel landed on "+result+".");
+return true;
+}
+if(cmd=="label")
+{
+return true;
+}
+if(cmd=="goto")
+{
+    if(tokens.length()<1)
+        return true;
+    string labelname=tokens[0];
+    int target=-1;
+    for(int i=0;i<int(lines.length());i++)
+    {
+        string[] t=parse_story_tokens(lines[i]);
+        if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
+        {
+            target=i;
+            break;
+        }
+    }
+    if(target!=-1)
+        current_line = target-1;
+skip_advance = true;
+return true;
+}
+if(cmd=="gotoif")
+{
+    if(tokens.length()<3)
+        return true;
+    string varname=tokens[0];
+    string value=tokens[1];
+    string labelname=tokens[2];
+    if(vars.exists(varname))
+    {
+        string v = vars.get(varname);
+        if(v==value)
+        {
+            int target=-1;
+            for(int i=0;i<int(lines.length());i++)
+            {
+                string[] t=parse_story_tokens(lines[i]);
+                if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
+                {
+                    target=i;
+                    break;
+                }
+            }
+            if(target!=-1)
+                current_line=target-1;
+                        skip_advance = true;
+}
+    }
+    return true;
+}
+if(cmd=="cutplay")
+{
+    if(tokens.length()<1)
+        return true;
+    string filename=tokens[0];
+    bool skippable=true;
+    bool fadeable=true;
+    int fadetime=30;
+    dictionary args=parse_named_args(tokens,1);
+skippable = get_arg_bool(args,"skippable",true);
+fadeable  = get_arg_bool(args,"fadeable",true);
+fadetime  = int(get_arg_number(args,"fadetime",30));
+    string path= get_sound("*"+filename+"*");
+    dlgplay(path, skippable, fadeable, fadetime);
+    return true;
+}
+if(cmd=="play")
+{
+    if(tokens.length()<1)
+        return true;
+    string filename=tokens[0];
+    double vol=0;
+    double pan=0;
+    dictionary args=parse_named_args(tokens,1);
+vol = get_arg_number(args,"volume",0);
+pan = get_arg_number(args,"pan",0);
+    if(tokens.length()>1 && tokens[1].find(":")==-1)
+        vol=string_to_number(tokens[1]);
+    if(tokens.length()>2 && tokens[2].find(":")==-1)
+        pan=string_to_number(tokens[2]);
+    p.play_stationary_extended(get_sound("misc/*"+filename+"*"), false, 0, pan, vol, 100, false);
+    return true;
+}
+if(cmd=="amb")
+{
+    if(tokens.length()<1)        return true;
+    string filename=tokens[0];
+    double vol=0;
+    double pan=0;
+    dictionary args=parse_named_args(tokens,1);
+vol = get_arg_number(args,"volume",0);
+pan = get_arg_number(args,"pan",0);
+    if(tokens.length()>1 && tokens[1].find(":")==-1)
+        vol=string_to_number(tokens[1]);
+    if(tokens.length()>2 && tokens[2].find(":")==-1)
+        pan=string_to_number(tokens[2]);
+    sourcepool.destroy_all();
+    sourcepool.play_stationary_extended(get_sound("source/*"+filename+"*"), true, 0, pan, vol, 100, false);
+    return true;
+}
+if(cmd=="mus")
+{
+    if(tokens.length()<1)
+        return true;
+    string filename=tokens[0];
+    double vol=0;
+    double pan=0;
+    dictionary args=parse_named_args(tokens,1);
+vol = get_arg_number(args,"volume",0);
+pan = get_arg_number(args,"pan",0);
+    if(tokens.length()>1 && tokens[1].find(":")==-1)
+        vol=string_to_number(tokens[1]);
+    if(tokens.length()>2 && tokens[2].find(":")==-1)
+        pan=string_to_number(tokens[2]);
+    muspool.destroy_all();
+    muspool.play_stationary_extended(get_sound("music/*"+filename+"*"), true, 0, pan, vol, 100, false);
+    return true;
+}
+if(cmd=="stop")
+{
+p.destroy_all();
+return true;
+}
+if(cmd=="ambstop")
+{
+sourcepool.destroy_all();
+return true;
+}
+if(cmd=="musstop")
+{
+muspool.destroy_all();
+return true;
+}
+if(cmd=="silence")
+{
+p.destroy_all();
+muspool.destroy_all();
+sourcepool.destroy_all();
+return true;
+}
+if(cmd=="function")
+{
+    if(tokens.length()<1)
+        return true;
+    int depth=1;
+    int scan=current_line+1;
+    while(scan < int(lines.length()))
+    {
+        string line=lines[scan];
+        string[] t=parse_story_tokens(line);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="function")
+                depth++;
+            if(c=="endfunction")
+            {
+                depth--;
+                if(depth==0)
+                    break;
+            }
+        }
+        scan++;
+    }
+    if(scan >= int(lines.length()))
+        return true;
+    current_line = scan;
+    return true;
+}
+if(cmd=="endfunction")
+{
+    return true;
+}
+if(cmd=="break")
+{
+    if(break_stack.length()>0)
+    {
+        break_stack[break_stack.length()-1] = true;
+    }
+    return true;
+}
+if(cmd=="continue")
+{
+    if(continue_stack.length()>0)
+    {
+        continue_stack[continue_stack.length()-1] = true;
+    }
+    return true;
+}
+if(cmd=="for")
+{
+    if(tokens.length()<3)
+        return true;
+    string varname=tokens[0];
+    int start=int(string_to_number(tokens[1]));
+    int end=int(string_to_number(tokens[2]));
+    int startline=current_line+1;
+    int endline=startline;
+    int depth=1;
+    while(endline < lines.length())
+    {
+        string[] t=parse_story_tokens(lines[endline]);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="for") depth++;
+            else if(c=="endfor") depth--;
+            if(depth==0)
+                break;
+        }
+        endline++;
+    }
+    continue_stack.push_back(false);
+    break_stack.push_back(false);
+    int top = continue_stack.length()-1;
+    for(int i=start;i<=end;i++)
+    {
+        vars.set(varname,string(i));
+        int result = run_block(startline, endline);
+if(result == 2)
+{
+    if(top >= 0) break_stack[top] = false;
+    break;
+}
+if(result == 1)
+{
+    if(top >= 0) continue_stack[top] = false;
+    continue;
+}
+    }
+    if(continue_stack.length()>0) continue_stack.pop_back();
+    if(break_stack.length()>0) break_stack.pop_back();
+    current_line=endline;
+    return true;
+}
+if(cmd=="foreach")
+{
+    if(tokens.length()<2)
+        return true;
+    string varname=tokens[0];
+    string arrname=tokens[1];
+    string[] arr;
+    if(!arrays.get(arrname, arr))
+        return true;
+    int startline=current_line+1;
+    int endline=startline;
+    int depth=1;
+    while(endline < lines.length())
+    {
+        string[] t=parse_story_tokens(lines[endline]);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="foreach") depth++;
+            else if(c=="endfor") depth--;
+            if(depth==0)
+                break;
+        }
+        endline++;
+    }
+    continue_stack.push_back(false);
+    break_stack.push_back(false);
+    int top = continue_stack.length()-1;
+    for(uint i=0;i<arr.length();i++)
+    {
+        vars.set(varname, arr[i]);
+        int result = run_block(startline, endline);
+if(result == 2)
+{
+    if(top >= 0) break_stack[top] = false;
+    break;
+}
+if(result == 1)
+{
+    if(top >= 0) continue_stack[top] = false;
+    continue;
+}
+    }
+    if(continue_stack.length()>0) continue_stack.pop_back();
+    if(break_stack.length()>0) break_stack.pop_back();
+    current_line=endline;
+    return true;
+}
+if(cmd=="endfor")
+{
+    return true;
+}
+if(cmd=="while")
+{
+    string key = string(current_line);
+    int endline;
+    if(!loopend.exists(key))
+    {
+        int scan=current_line+1;
+        int depth=1;
+        endline=current_line;
+        while(scan < int(lines.length()))
+        {
+            string[] t=parse_story_tokens(lines[scan]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="while")
+                    depth++;
+                else if(c=="endwhile")
+                {
+                    depth--;
+                    if(depth==0)
+                    {
+                        endline=scan;
+                        break;
+                    }
+                }
+            }
+            scan++;
+        }
+        loopend[key] = string(endline);
+        loopstart[string(endline)] = key;
+    }
+    endline = string_to_int(string(loopend[key]));
+    string condition=string_join(tokens," ");
+    condition = vars.replace_vars(condition, get_locals());
+    bool result=false;
+    if(condition.lower()=="true")
+        result=true;
+    else if(condition.lower()=="false")
+        result=false;
+    else
+        result=evaluate_condition(condition);
+    if(result)
+    {
+        string stack_key = "__while_active_" + key;
+        if(!loopvars.exists(stack_key))
+        {
+            continue_stack.push_back(false);
+            break_stack.push_back(false);
+            loopvars[stack_key] = "1";
+        }
+    }
+    else
+    {
+        string stack_key = "__while_active_" + key;
+        if(loopvars.exists(stack_key))
+        {
+            loopvars.delete(stack_key);
+            if(continue_stack.length()>0) continue_stack.remove_at(continue_stack.length()-1);
+            if(break_stack.length()>0) break_stack.remove_at(break_stack.length()-1);
+        }
+        current_line=endline;
+        skip_advance = true;
+    }
+    return true;
+}
+if(cmd=="endwhile")
+{
+    string key=string(current_line);
+    if(!loopstart.exists(key))
+        return true;
+    int startline=string_to_int(string(loopstart[key]));
+    string start_key = string(startline);
+    string stack_key = "__while_active_" + start_key;
+    string[] t=parse_story_tokens(lines[startline]);
+    if(t.length()==0)
+        return true;
+    t.remove_at(0);
+    string condition=string_join(t," ");
+    condition = vars.replace_vars(condition, get_locals());
+    bool result=false;
+    if(condition.lower()=="true")
+        result=true;
+    else if(condition.lower()=="false")
+        result=false;
+    else
+        result=evaluate_condition(condition);
+    int top = continue_stack.length()-1;
+    if(top >= 0)
+    {
+        if(break_stack[top])
+        {
+            break_stack[top] = false;
+            if(loopvars.exists(stack_key))
+                loopvars.delete(stack_key);
+            continue_stack.remove_at(top);
+            break_stack.remove_at(top);
+            loopstart.delete(key);
+            loopend.delete(string(startline));
+            return true;
+        }
+        if(continue_stack[top])
+        {
+            continue_stack[top] = false;
+            current_line = startline;
+            skip_advance = true;
+            return true;
+        }
+    }
+    if(result)
+    {
+        current_line=startline;
+        skip_advance = true;
+    }
+    else
+    {
+        if(loopvars.exists(stack_key))
+            loopvars.delete(stack_key);
+        if(continue_stack.length()>0) continue_stack.remove_at(continue_stack.length()-1);
+        if(break_stack.length()>0) break_stack.remove_at(break_stack.length()-1);
+        loopstart.delete(key);
+        loopend.delete(string(startline));
+    }
+    return true;
+}
+if(cmd=="repeat")
+{
+    if(tokens.length()<1)
+        return true;
+    int count = int(string_to_number(tokens[0]));
+    int startline = current_line + 1;
+    int endline = startline;
+    int depth = 1;
+    while(endline < int(lines.length()))
+    {
+        string[] t = parse_story_tokens(lines[endline]);
+        if(t.length() > 0)
+        {
+            string c = t[0].lower();
+            if(c == "repeat")
+                depth++;
+            else if(c == "endrepeat")
+                depth--;
+            if(depth == 0)
+                break;
+        }
+        endline++;
+    }
+    continue_stack.push_back(false);
+    break_stack.push_back(false);
+    int top = continue_stack.length()-1;
+    for(int r = 0; r < count; r++)
+    {
+        int result = run_block(startline, endline);
+if(result == 2)
+{
+    if(top >= 0) break_stack[top] = false;
+    break;
+}
+if(result == 1)
+{
+    if(top >= 0) continue_stack[top] = false;
+    continue;
+}
+    }
+    if(continue_stack.length()>0) continue_stack.pop_back();
+    if(break_stack.length()>0) break_stack.pop_back();
+    current_line = endline;
+    return true;
+}
+if(cmd=="write")
+{
+    if(tokens.length()<1)
+        return true;
+    string varname = tokens[0];
+    tokens.remove_at(0);
+    string prompt = string_join(tokens, " ");
+    prompt = vars.replace_vars(prompt, get_locals());
+    if(write_mode_enabled)
+        vd.set_disallowed_chars(write_chars, write_use_only, write_message);
+    else
+        vd.set_disallowed_chars("", false, "");
+    string val = vd.input_box("", prompt);
+    bool is_empty = (val == "");
+    if(is_empty)
+    {
+        if(write_cancel == "exit")
+        {
+            vd.set_disallowed_chars("", false, "");
+            return false;
+        }
+        if(write_cancel == "continue")
+        {
+            vd.set_disallowed_chars("", false, "");
+            return true;
+        }
+        if(write_cancel == "loop")
+        {
+            while(val == "")
+            {
+                val = vd.input_box("", prompt);
+            }
+        }
+    }
+    vars.set(varname, val);
+    vd.set_disallowed_chars("", false, "");
+    return true;
+}
+if(cmd=="writemode")
+{
+    if(tokens.length() == 0)
+    {
+        write_mode_enabled = false;
+        write_chars = "";
+        write_use_only = false;
+        write_message = "";
+        write_cancel = "exit";
+        return true;
+    }
+    dictionary args = parse_named_args(tokens);
+    string[] clean_tokens;
+    for(uint i=0;i<tokens.length();i++)
+    {
+        if(tokens[i].find(":")==-1)
+            clean_tokens.insert_last(tokens[i]);
+    }
+    tokens = clean_tokens;
+    string mode = get_arg_string(args, "cancel", write_cancel);
+    mode = mode.lower();
+    if(mode=="exit" || mode=="continue" || mode=="loop")
+        write_cancel = mode;
+    if(tokens.length() > 0)
+    {
+        write_mode_enabled = true;
+        write_use_only = false;
+        write_chars = "";
+        write_message = "";
+        string type = tokens[0];
+        if(tokens.length() > 1)
+        {
+            string charmode = tokens[1].lower();
+            if(charmode=="true" || charmode=="only" || charmode=="allow" || charmode=="on" || charmode=="1")
+                write_use_only = true;
+            else if(charmode=="false" || charmode=="block" || charmode=="deny" || charmode=="off" || charmode=="0")
+                write_use_only = false;
+        }
+        if(tokens.length() > 2)
+        {
+            tokens.remove_at(0);
+            tokens.remove_at(0);
+            write_message = string_join(tokens, " ");
+            write_message = vars.replace_vars(write_message, get_locals());
+        }
+        if(type.find("num")!=-1)
+            write_chars += "0123456789";
+        if(type.find("let")!=-1)
+            write_chars += "abcdefghijklmnopqrstuvwxyz";
+        if(type.find("LET")!=-1)
+            write_chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if(type.find("sim")!=-1)
+            write_chars += "!@#$%^&*()[]{};:'\"\\|,.<>?_/+=`~";
+        if(type.find("spc")!=-1)
+            write_chars += " ";
+        if(type == "none")
+        {
+            write_mode_enabled = false;
+        }
+    }
+    return true;
+}
+if(cmd=="var")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string value=string_join(tokens," ");
+if(vars.exists(value))
+    value = vars.get(value);
+value=eval_expr(value);
+vars.set(varname,value);
+return true;
+}
+if(cmd=="set")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string value=string_join(tokens," ");
+if(vars.exists(value))
+    value = vars.get(value);
+value=eval_expr(value);
+vars.set(varname,value);
+return true;
+}
+if(cmd=="add")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string expr=string_join(tokens," ");
+if(vars.exists(expr))
+    expr = vars.get(expr);
+expr=eval_expr(expr);
+int value=int(string_to_number(expr));
+int current=0;
+if(vars.exists(varname))
+current=string_to_int(vars.get(varname));
+current+=value;
+vars.set(varname,string(current));
+return true;
+}
+if(cmd=="sub")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string expr=string_join(tokens," ");
+if(vars.exists(expr))
+    expr = vars.get(expr);
+expr=eval_expr(expr);
+int value=int(string_to_number(expr));
+int current=0;
+if(vars.exists(varname))
+current=string_to_int(vars.get(varname));
+current-=value;
+vars.set(varname,string(current));
+return true;
+}
+if(cmd=="mul")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string expr=string_join(tokens," ");
+if(vars.exists(expr))
+    expr = vars.get(expr);
+expr=eval_expr(expr);
+int value=int(string_to_number(expr));
+int current=0;
+if(vars.exists(varname))
+current=string_to_int(vars.get(varname));
+current*=value;
+vars.set(varname,string(current));
+return true;
+}
+if(cmd=="div")
+{
+if(tokens.length()<2)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string expr=string_join(tokens," ");
+if(vars.exists(expr))
+    expr = vars.get(expr);
+expr=eval_expr(expr);
+int value=int(string_to_number(expr));
+if(value==0)
+return true;
+int current=0;
+if(vars.exists(varname))
+current=string_to_int(vars.get(varname));
+current/=value;
+vars.set(varname,string(current));
+return true;
+}
+if(cmd=="question")
+{
+    last_menu_line = current_line;
+if(tokens.length()<3)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+string prompt=tokens[0];
+tokens.remove_at(0);
+setupmenu(false);
+for(uint i=0;i<tokens.length();i++)
+m.add_item(tokens[i]);
+m.intro_text=prompt;
+int res=m.run();
+if(res>0)
+vars.set(varname,string(res));
+return true;
+}
+if(cmd=="answer")
+{
+if(tokens.length()<3)
+return true;
+string varname=tokens[0];
+tokens.remove_at(0);
+int answer=int(string_to_number(tokens[0]));
+tokens.remove_at(0);
+string command=string_join(tokens," ");
+if(vars.exists(varname))
+{
+if(string_to_int(vars.get(varname))==answer)
+return execute(command);
+}
+return true;
+}
+if(cmd=="damage")
+{
+if(tokens.length()<1)
+return true;
+string expr=string_join(tokens," ");
+expr=eval_expr(expr);
+int dmg=int(string_to_number(expr));
+playerhp-=dmg;
+if(playerhp<0)
+playerhp=0;
+if(playerhp<=0)
+return execute("goto game_over");
+return true;
+}
+if(cmd=="heal")
+{
+if(tokens.length()<1)
+return true;
+string expr=string_join(tokens," ");
+expr=eval_expr(expr);
+int hp=int(string_to_number(expr));
+playerhp+=hp;
+if(playerhp>playermaxhp)
+playerhp=playermaxhp;
+return true;
+}
+if(cmd=="hp")
+{
+dlgmessage("Health: "+string(playerhp)+"/"+string(playermaxhp));
+return true;
+}
+if(cmd=="xp")
+{
+if(tokens.length()<1)
+return true;
+string expr=string_join(tokens," ");
+expr=eval_expr(expr);
+int gain=int(string_to_number(expr));
+playerxp+=gain;
+int need=playerlevel*20;
+if(playerxp>=need)
+{
+playerxp-=need;
+playerlevel++;
+playermaxhp+=5;
+playerhp=playermaxhp;
+}
+return true;
+}
+if(cmd=="level")
+{
+dlgmessage("Level "+string(playerlevel)+"  XP "+string(playerxp));
+return true;
+}
+if(cmd=="journaladd")
+{
+if(tokens.length()<2)
+return true;
+string key=tokens[0];
+tokens.remove_at(0);
+string entry=string_join(tokens," ");
+journal[key]=entry;
+return true;
+}
+if(cmd=="journal")
+{
+string msg="Journal:";
+string[] keys=journal.get_keys();
+if(keys.length()==0)
+msg+="\r\n(empty)";
+else
+{
+for(uint i=0;i<keys.length();i++)
+{
+msg+="\r\n"+string(journal[keys[i]]);
+}
+}
+dlgmessage(msg);
+return true;
+}
+if(cmd=="teleport")
+{
+if(tokens.length()<1)
+return true;
+string dest=tokens[0];
+return execute("goto "+dest);
+return true;
+}
+if(cmd=="waitkey")
+{
+dlgmessage("Press Enter to continue.");
+while(true)
+{
+wait(5);
+if(key_repeating(KEY_RETURN))
+break;
+}
+return true;
+}
+if(cmd=="choice")
+{
+    last_menu_line = current_line;
+    bool locked=false;
+    if(tokens.length()>1 && tokens[tokens.length()-1].lower()=="lock")
+    {
+        locked=true;
+        tokens.remove_at(tokens.length()-1);
+    }
+    string prompt=string_join(tokens," ");
+    string[] options;
+    string[] commands;
+    int depth=1;
+    int scan=current_line+1;
+    int endline=current_line;
+    while(scan < int(lines.length()))
+    {
+        string line=lines[scan];
+        string[] t=parse_story_tokens(line);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="choice")
+                depth++;
+            if(c=="endchoice")
+            {
+                depth--;
+                if(depth==0)
+                {
+                    endline=scan;
+                    break;
+                }
+            }
+        }
+        if(depth==1)
+        {
+            int q1=line.find("\"");
+            int q2=line.find("\"",q1+1);
+            if(q1!=-1 && q2!=-1)
+            {
+                string option=line.substr(q1+1,q2-q1-1);
+                string command="";
+                if(q2+1 < int(line.length()))
+                    command=string_trim_sides(line.substr(q2+1));
+                options.insert_last(option);
+                commands.insert_last(command);
+            }
+        }
+        scan++;
+    }
+        setupmenu(false);
+        for(uint i=0;i<options.length();i++)
+            m.add_item(options[i]);
+        m.intro_text=prompt;
+        int result=m.run();
+        if(result>0 && result<=int(commands.length()))
+        {
+            current_line=endline;
+bool cont = execute(commands[result-1]);
+    skip_advance = true;
+return cont;
+}   
+    if(result <= 0)
+{
+    return false;
+}   
+current_line=endline;
+skip_advance = true;
+    return true;
+}
+if(cmd=="randomchoice")
+{
+    string[] options;
+    int scan = current_line + 1;
+    int endline = scan;
+    while(scan < int(lines.length()))
+    {
+        string line = lines[scan];
+        string[] t = parse_story_tokens(line);
+        if(t.length()>0 && t[0].lower()=="endrandom")
+        {
+            endline = scan;
+            break;
+        }
+        options.insert_last(line);
+        scan++;
+    }
+    if(options.length()==0)
+    {
+        current_line=endline;
+        return true;
+    }
+    int r=random(0,options.length()-1);
+    current_line=endline;
+    return execute(options[r]);
+}
+if(cmd=="map")
+{
+    last_menu_line = current_line;
+    if(tokens.length()==0)
+        return true;
+    string prompt=tokens[0];
+    setupmenu(false);
+    m.intro_text=prompt;
+    string[] commands;
+    int scan=current_line+1;
+    int endline=current_line;
+    while(scan < int(lines.length()))
+    {
+        string line=lines[scan];
+        string[] t=parse_story_tokens(line);
+        if(t.length()==0)
+        {
+            scan++;
+            continue;
+        }
+        string c=t[0].lower();
+        if(c=="endmap")
+        {
+            endline=scan;
+            break;
+        }
+        string label=t[0];
+        t.remove_at(0);
+        string action=string_join(t," ");
+        m.add_item(label);
+        commands.insert_last(action);
+        scan++;
+    }
+    int result=m.run();
+    current_line=endline;
+    if(result>0 && result<=commands.length())
+        return execute(commands[result-1]);
+    return true;
+}
+if(cmd=="combat")
+{
+    last_menu_line = current_line;
+if(tokens.length()<4)
+return true;
+string enemy=tokens[0];
+int enemyhp=int(string_to_number(tokens[1]));
+int mindmg=int(string_to_number(tokens[2]));
+int maxdmg=int(string_to_number(tokens[3]));
+combatwin=false;
+dlgmessage("A "+enemy+" appears!");
+while(enemyhp>0 && playerhp>0)
+{
+dlgmessage(enemy+" HP: "+string(enemyhp));
+dlgmessage("Your HP: "+string(playerhp));
+setupmenu(false);
+m.intro_text="Choose your action";
+m.add_item("Attack");
+m.add_item("Use potion");
+m.add_item("Run");
+int choice=m.run();
+if(choice==1)
+{
+int dmg=random(1,5);
+dlgmessage("You deal "+string(dmg)+" damage.");
+enemyhp-=dmg;
+}
+if(choice==2)
+{
+if(inv.exists("potion"))
+{
+inv.delete("potion");
+int heal=5;
+playerhp+=heal;
+if(playerhp>playermaxhp)
+playerhp=playermaxhp;
+dlgmessage("You drink a potion.");
+}
+else
+{
+dlgmessage("You have no potion.");
+}
+}
+if(choice==3)
+{
+dlgmessage("You escape.");
+combatwin=false;
+return true;
+}
+if(enemyhp<=0)
+break;
+int edmg=random(mindmg,maxdmg);
+playerhp-=edmg;
+dlgmessage(enemy+" hits you for "+string(edmg));
+if(playerhp<=0)
+break;
+}
+if(playerhp<=0)
+{
+dlgmessage("You were defeated.");
+combatwin=false;
+}
+else
+{
+dlgmessage("You defeated the "+enemy);
+combatwin=true;
+}
+return true;
+}
+if(cmd=="genpass")
+{
+    if(tokens.length()<2)
+        return true;
+    string types=tokens[0];
+    int length=int(string_to_number(tokens[1]));
+    if(length<=0)
+        return true;
+    string chars="";
+    if(types.find("num")!=-1)
+        chars+="0123456789";
+    if(types.find("let")!=-1)
+        chars+="abcdefghijklmnopqrstuvwxyz";
+    if(types.find("LET")!=-1)
+        chars+="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    if(types.find("sim")!=-1)
+        chars+="!@#$%^&*()[]{};:'\"\\|,.<>?_/+=`~";
+    if(chars=="")
+        return true;
+    string result="";
+    for(int i=0;i<length;i++)
+    {
+        int r=random(0,chars.length()-1);
+        result+=chars.substr(r,1);
+    }
+    vars.set("lastpass", result);
+    dlgmessage("Your password is "+result);
+    return true;
+}
+if(cmd=="genmap")
+{
+string[] locations={"forest", "town", "ruins", "cave", "lake", "tower", "village"};
+worldmap.resize(0);
+for(int i=0;i<5;i++)
+{
+int r=random(0,locations.length()-1);
+worldmap.insert_last(locations[r]);
+}
+return true;
+}
+if(cmd=="worldmap")
+{
+    last_menu_line = current_line;
+setupmenu(false);
+m.intro_text="World Map";
+for(uint i=0;i<worldmap.length();i++)
+{
+m.add_item(worldmap[i]);
+}
+m.add_item("Save game");
+m.add_item("Exit story");
+int r=m.run();
+if(r<=worldmap.length())
+{
+return execute("goto "+worldmap[r-1]);
+}
+else if(r==worldmap.length()+1)
+{
+return execute("save");
+}
+else
+{
+return execute("exit");
+}
+return true;
+}
+if(cmd=="load")
+{
+file f;
+if(!f.open("data/save.dat", "r"))
+{
+dlgmessage("No save file found.");
+return true;
+}
+vars.clear();
+inv.delete_all();
+while(!f.eof)
+{
+string line=f.read();
+string[] t=parse_story_tokens(line);
+if(t.length()==0)
+continue;
+if(t[0]=="var")
+{
+string value = string_join(t, " ", 2);
+vars.set(t[1], value);
+}
+if(t[0]=="item")
+{
+inv[t[1]]="1";
+}
+}
+f.close();
+dlgmessage("Story loaded.");
+return true;
+}
+if(cmd=="save")
+{
+file f;
+if(f.open("data/save.dat", "w"))
+{
+string[] keys=vars.vars.get_keys();
+for(uint i=0;i<keys.length();i++)
+{
+string k=keys[i];
+string v=vars.get(k);
+f.write("var "+k+" "+v);
+}
+string[] items=inv.get_keys();
+for(uint i=0;i<items.length();i++)
+{
+f.write("item "+items[i]);
+}
+f.close();
+}
+dlgmessage("Story saved.");
+return true;
+}
+if(cmd=="checkpoint")
+{
+execute("save");
+return true;
+}
+if(cmd=="if")
+{
+    if(tokens.length()<1)
+        return true;
+    string condition = string_join(tokens," ");
+    condition = vars.replace_vars(condition);
+    bool result = evaluate_condition(condition);
+    if_result_stack.insert_last(result);
+    if(result)
+        return true;
+    int depth=1;
+    int scan=current_line+1;
+    while(scan < int(lines.length()))
+    {
+        string[] t=parse_story_tokens(lines[scan]);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="if")
+                depth++;
+            else if(c=="endif")
+            {
+                depth--;
+                if(depth==0)
+                {
+                    current_line=scan;
+                    skip_advance=true;
+                    return true;
+                }
+            }
+            else if(depth==1 && (c=="elseif" || c=="else"))
+            {
+                current_line=scan-1;
+                return true;
+            }
+        }
+        scan++;
+    }
+    return true;
+}
+if(cmd=="elseif")
+{
+    if(tokens.length()<1)
+        return true;
+    if(if_result_stack.length()==0)
+        return true;
+    bool already_matched = if_result_stack[if_result_stack.length()-1];
+    if(already_matched)
+    {
+        int depth=1;
+        int scan=current_line+1;
+        while(scan < int(lines.length()))
+        {
+            string[] t=parse_story_tokens(lines[scan]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="if")
+                    depth++;
+                else if(c=="endif")
+                {
+                    depth--;
+                    if(depth==0)
+                    {
+                        current_line=scan;
+                        skip_advance=true;
+                        return true;
+                    }
+                }
+            }
+            scan++;
+        }
+        return true;
+    }
+    string condition=string_join(tokens," ");
+    condition = vars.replace_vars(condition);
+    bool result = evaluate_condition(condition);
+    if_result_stack[if_result_stack.length()-1] = result;
+    if(result)
+        return true;
+    int depth=1;
+    int scan=current_line+1;
+    while(scan < int(lines.length()))
+    {
+        string[] t=parse_story_tokens(lines[scan]);
+        if(t.length()>0)
+        {
+            string c=t[0].lower();
+            if(c=="if")
+                depth++;
+            else if(c=="endif")
+            {
+                depth--;
+                if(depth==0)
+                {
+                    current_line=scan;
+                    skip_advance=true;
+                    return true;
+                }
+            }
+            else if(depth==1 && (c=="elseif" || c=="else"))
+            {
+                current_line=scan-1;
+                return true;
+            }
+        }
+        scan++;
+    }
+    return true;
+}
+if(cmd=="else")
+{
+    if(if_result_stack.length()==0)
+        return true;
+    bool already_matched = if_result_stack[if_result_stack.length()-1];
+    if(already_matched)
+    {
+        int depth=1;
+        int scan=current_line+1;
+        while(scan < int(lines.length()))
+        {
+            string[] t=parse_story_tokens(lines[scan]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="if")
+                    depth++;
+                else if(c=="endif")
+                {
+                    depth--;
+                    if(depth==0)
+                    {
+                        current_line=scan;
+                        skip_advance=true;
+                        return true;
+                    }
+                }
+            }
+            scan++;
+        }
+        return true;
+    }
+    if_result_stack[if_result_stack.length()-1] = true;
+    return true;
+}
+if(cmd=="endif")
+{
+    if(if_result_stack.length()>0)
+        if_result_stack.remove_last();
+    return true;
+}
+if(cmd=="give")
+{
+if(tokens.length()<1)
+return true;
+string item=tokens[0];
+inv[item]="1";
+return true;
+}
+if(cmd=="recycle")
+{
+if(tokens.length()<1)
+return true;
+string item=tokens[0];
+if(inv.exists(item))
+inv.delete(item);
+return true;
+}
+if(cmd=="inv")
+{
+string message="Inventory:";
+string[] items=inv.get_keys();
+if(items.length()==0)
+{
+message+="\r\n(empty)";
+}
+else
+{
+for(uint i=0;i<items.length();i++)
+{
+message+="\r\n"+items[i];
+}
+}
+dlgmessage(message);
+return true;
+}
+if(cmd=="invclear")
+{
+inv.delete_all();
+return true;
+}
+if(cmd=="queststart")
+{
+if(tokens.length()<1)
+return true;
+string q=tokens[0];
+quests[q]="1";
+return true;
+}
+if(cmd=="questcomplete")
+{
+if(tokens.length()<1)
+return true;
+string q=tokens[0];
+quests[q]="2";
+return true;
+}
+if(cmd=="questfail")
+{
+if(tokens.length()<1)
+return true;
+string q=tokens[0];
+quests[q]="3";
+return true;
+}
+if(cmd=="questcheck")
+{
+if(tokens.length()<2)
+return true;
+string q=tokens[0];
+tokens.remove_at(0);
+string action=string_join(tokens," ");
+if(quests.exists(q))
+{
+string state=string(quests[q]);
+if(state=="1" || state=="2")
+return execute(action);
+}
+return true;
+}
+if(cmd=="quests")
+{
+string msg="Quest Log:";
+string[] keys=quests.get_keys();
+bool empty=true;
+for(uint i=0;i<keys.length();i++)
+{
+string q=keys[i];
+string state=string(quests[q]);
+if(state=="1")
+{
+msg+="\r\n"+q;
+empty=false;
+}
+}
+if(empty)
+msg+="\r\n(no active quests)";
+dlgmessage(msg);
+return true;
+}
+if(cmd=="questclear")
+{
+quests.delete_all();
+return true;
+}
+if(cmd=="title")
+{
+if(tokens.length()==0)
+{
+show_window(wintitle+", version "+version);
+}
+else
+{
+string newtitle=string_join(tokens," ");
+show_window(newtitle);
+}
+return true;
+}
+if(cmd.starts_with("@"))
+{
+string folder=cmd.substr(1);
+string newpath="data/stories/"+folder+"/info.dat";
+parser.load(newpath);
+return true;
+}
+if(cmd=="exit")
+{
+p.destroy_all();
+muspool.destroy_all();
+sourcepool.destroy_all();
+show_window(wintitle+", version "+version);
+return false;
+}
+if(cmd=="end")
+{
+p.destroy_all();
+muspool.destroy_all();
+sourcepool.destroy_all();
+show_window(wintitle+", version "+version);
+return false;
+}
+return true;
+}
+}

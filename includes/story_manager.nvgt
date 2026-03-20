@@ -1,0 +1,59 @@
+class story_manager
+{
+story_parser parser;
+story_variables vars;
+story_interpreter@ interp;
+string story_path;
+story_manager()
+{
+@interp=story_interpreter(@vars,@parser);
+}
+void load_story(string story)
+{
+    storytype=story;
+    vars.clear();
+    string storypath="data/stories/"+storytype+"/info.dat";
+    if(file_exists(storypath))
+    {
+        parser.load(storypath);
+    }
+    else
+    {
+        alert("Error", "Story '"+storytype+"' could not be found.");
+        return;
+    }
+    lines.resize(0);
+interp.functions.delete_all();
+    while(!parser.finished())
+    {
+    string line=parser.get_line();
+    lines.insert_last(line);
+    string[] t=parse_story_tokens(line);
+    if(t.length()>1 && t[0].lower()=="function")
+    {
+        interp.functions[t[1]] = string(lines.length()-1);
+    }
+        parser.next();
+    }
+}
+void run_story()
+{
+    current_line=0;
+    while(current_line < lines.length())
+    {
+        if(trim(lines[current_line])=="")
+        {
+            current_line++;
+            continue;
+        }
+        bool cont=interp.execute(lines[current_line]);
+        if(!cont)
+            break;
+if(!interp.skip_advance)
+    current_line++;
+else
+    interp.skip_advance = false;
+    }
+interp.flush_dialog();
+}
+}
