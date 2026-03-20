@@ -39,13 +39,16 @@ function createwheel
     array <wheelname> <wheelitems> --
 
     write spinspeed Enter starting spin speed. Example: 40
-    if spinspeed == "" set spinspeed 40
+    if spinspeed == ""
+set spinspeed 40
 
     write slowdown Enter slowdown amount per tick. Example: 20
-    if slowdown == "" set slowdown 20
+    if slowdown == ""
+set slowdown 20
 
     write spinticks Enter number of spin ticks. Example: 10
-    if spinticks == "" set spinticks 10
+    if spinticks == ""
+set spinticks 10
 
     set haswheel 1
 

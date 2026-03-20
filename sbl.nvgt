@@ -1,3 +1,7 @@
+#pragma asset data
+#pragma asset sounds
+#pragma document docks
+
 #include"bgt_compat.nvgt"
 #include"file_contents.nvgt"
 #include "instance.nvgt"
