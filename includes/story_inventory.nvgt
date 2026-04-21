@@ -1,0 +1,128 @@
+bool exec_inventory(story_interpreter@ si, string cmd, string[] tokens)
+{
+    if(cmd=="give")
+    {
+        if(tokens.length()<1)
+            return true;
+        string item=tokens[0];
+        inv[item]="1";
+        return true;
+    }
+    if(cmd=="recycle")
+    {
+        if(tokens.length()<1)
+            return true;
+        string item=tokens[0];
+        if(inv.exists(item))
+            inv.delete(item);
+        return true;
+    }
+    if(cmd=="inv")
+    {
+        string message="Inventory:";
+        string[] items=inv.get_keys();
+        if(items.length()==0)
+            message+="\r\n(empty)";
+        else
+        {
+            for(uint i=0;i<items.length();i++)
+                message+="\r\n"+items[i];
+        }
+        dlgmessage(message);
+        return true;
+    }
+    if(cmd=="invclear")
+    {
+        inv.delete_all();
+        return true;
+    }
+    if(cmd=="queststart")
+    {
+        if(tokens.length()<1)
+            return true;
+        string q=tokens[0];
+        quests[q]="1";
+        return true;
+    }
+    if(cmd=="questcomplete")
+    {
+        if(tokens.length()<1)
+            return true;
+        string q=tokens[0];
+        quests[q]="2";
+        return true;
+    }
+    if(cmd=="questfail")
+    {
+        if(tokens.length()<1)
+            return true;
+        string q=tokens[0];
+        quests[q]="3";
+        return true;
+    }
+    if(cmd=="questcheck")
+    {
+        if(tokens.length()<2)
+            return true;
+        string q=tokens[0];
+        tokens.remove_at(0);
+        string action=string_join(tokens," ");
+        if(quests.exists(q))
+        {
+            string state=string(quests[q]);
+            if(state=="1" || state=="2")
+                return si.execute(action);
+        }
+        return true;
+    }
+    if(cmd=="quests")
+    {
+        string msg="Quest Log:";
+        string[] keys=quests.get_keys();
+        bool empty=true;
+        for(uint i=0;i<keys.length();i++)
+        {
+            string q=keys[i];
+            string state=string(quests[q]);
+            if(state=="1")
+            {
+                msg+="\r\n"+q;
+                empty=false;
+            }
+        }
+        if(empty)
+            msg+="\r\n(no active quests)";
+        dlgmessage(msg);
+        return true;
+    }
+    if(cmd=="questclear")
+    {
+        quests.delete_all();
+        return true;
+    }
+    if(cmd=="journaladd")
+    {
+        if(tokens.length()<2)
+            return true;
+        string key=tokens[0];
+        tokens.remove_at(0);
+        string entry=string_join(tokens," ");
+        journal[key]=entry;
+        return true;
+    }
+    if(cmd=="journal")
+    {
+        string msg="Journal:";
+        string[] keys=journal.get_keys();
+        if(keys.length()==0)
+            msg+="\r\n(empty)";
+        else
+        {
+            for(uint i=0;i<keys.length();i++)
+                msg+="\r\n"+string(journal[keys[i]]);
+        }
+        dlgmessage(msg);
+        return true;
+    }
+    return false;
+}

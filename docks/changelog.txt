@@ -1,3 +1,13 @@
+New in 1.1.
+Fixed a bug where arrays, inventory, quests, and journal data were being stored in global dictionaries by the command handlers but looked up in separate class member dictionaries by other commands such as spin. This caused the spin command to always find an empty wheel, and could have affected other commands that cross the boundary between class methods and free functions.
+Improved the readme documentation for several commands, including return, filter, map, genmap, worldmap, teleport, waitkey, combat, questcheck, questclear, journaladd, journal, and checkpoint. Descriptions now accurately reflect how each command works and what arguments they accept.
+Updated the story loader to handle all line ending styles, including Windows CRLF, Unix LF, and old Mac CR. Story files can now be written on any platform.
+Fixed a bug in the template story where pressing escape on optional fields would show unresolved variable tokens instead of skipping the follow-up text.
+Removed unreachable code after the teleport and worldmap commands.
+Fixed a bug where the filter command would match substrings instead of exact values, causing for example filtering for 1 to also match 10 and 11.
+Fixed a bug where comparing a variable to an empty string in conditions would always return false.
+Fixed a bug where negative numbers were not recognized as numeric values in conditions, causing comparisons like modifier < 0 to always fail.
+Fixed a bug where negative modifiers in the dice roller were not being applied correctly due to menu choices being wrapped in quotes.
 New in 1.0.
 Addressed an issue where returning certain functions with the return command would crash the entire program.
 Improved the return command. It can now return actual values such as strings, numbers, and calls to other funcions.

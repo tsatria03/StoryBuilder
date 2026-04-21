@@ -1,0 +1,275 @@
+bool exec_arrays(story_interpreter@ si, string cmd, string[] tokens)
+{
+    if(cmd=="length")
+    {
+        if(tokens.length()<2)
+            return true;
+        string target=tokens[0];
+        string resultvar=tokens[1];
+        string[] arr;
+        if(arrays.get(target, arr))
+        {
+            si.vars.set(resultvar, string(arr.length()));
+            return true;
+        }
+        if(si.vars.exists(target))
+        {
+            string val=si.vars.get(target);
+            si.vars.set(resultvar, string(val.length()));
+            return true;
+        }
+        si.vars.set(resultvar, string(target.length()));
+        return true;
+    }
+    if(cmd=="array")
+    {
+        if(tokens.length()<2)
+            return true;
+        string name=tokens[0];
+        tokens.remove_at(0);
+        string delimiter="";
+        if(tokens.length()>1)
+        {
+            delimiter=tokens[tokens.length()-1];
+            tokens.remove_last();
+        }
+        string data=string_join(tokens," ");
+        string[] items;
+        if(delimiter!="")
+        {
+            items=string_split(data,delimiter,true);
+        }
+        else
+        {
+            if(data.find(",")!=-1)
+                items=string_split(data,",",true);
+            else
+                items=string_split(data," ",true);
+        }
+        for(uint i=0;i<items.length();i++)
+            items[i]=trim(items[i]);
+        arrays.set(name,items);
+        return true;
+    }
+    if(cmd=="push")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        tokens.remove_at(0);
+        string value=string_join(tokens," ");
+        string[] arr;
+        arrays.get(arrname, arr);
+        arr.insert_last(value);
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="pop")
+    {
+        if(tokens.length()<1)
+            return true;
+        string arrname=tokens[0];
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        if(arr.length()==0)
+            return true;
+        arr.remove_at(arr.length()-1);
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="shuffle")
+    {
+        if(tokens.length()<1)
+            return true;
+        string arrname=tokens[0];
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        for(uint i=0;i<arr.length();i++)
+        {
+            int j=random(0, arr.length()-1);
+            string tmp=arr[i];
+            arr[i]=arr[j];
+            arr[j]=tmp;
+        }
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="pick")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        string varname=tokens[1];
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        if(arr.length()==0)
+            return true;
+        int r=random(0, arr.length()-1);
+        si.vars.set(varname, arr[r]);
+        return true;
+    }
+    if(cmd=="remove")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        tokens.remove_at(0);
+        string value=string_join(tokens," ");
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        for(int i=int(arr.length())-1;i>=0;i--)
+        {
+            if(arr[i]==value)
+                arr.remove_at(i);
+        }
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="remove_first")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        tokens.remove_at(0);
+        string value=string_join(tokens," ");
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        for(uint i=0;i<arr.length();i++)
+        {
+            if(arr[i]==value)
+            {
+                arr.remove_at(i);
+                break;
+            }
+        }
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="remove_last")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        tokens.remove_at(0);
+        string value=string_join(tokens," ");
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        for(int i=int(arr.length())-1;i>=0;i--)
+        {
+            if(arr[i]==value)
+            {
+                arr.remove_at(i);
+                break;
+            }
+        }
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="join")
+    {
+        if(tokens.length()<3)
+            return true;
+        string arrname=tokens[0];
+        string separator=tokens[1];
+        string resultvar=tokens[2];
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        string result="";
+        for(uint i=0;i<arr.length();i++)
+        {
+            if(i>0)
+                result+=separator;
+            result+=arr[i];
+        }
+        si.vars.set(resultvar, result);
+        return true;
+    }
+    if(cmd=="filter")
+    {
+        if(tokens.length()<3)
+            return true;
+        string source=tokens[0];
+        string value=tokens[1];
+        string result=tokens[2];
+        string[] src;
+        if(!arrays.get(source, src))
+            return true;
+        string[] result_arr;
+        for(uint i=0;i<src.length();i++)
+        {
+            if(src[i]==value)
+                result_arr.insert_last(src[i]);
+        }
+        arrays.set(result, result_arr);
+        return true;
+    }
+    if(cmd=="sort")
+    {
+        if(tokens.length()<1)
+            return true;
+        string arrname=tokens[0];
+        string mode="alpha";
+        if(tokens.length()>1)
+            mode=tokens[1].lower();
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        if(mode=="natural")
+            arr.sort(natural_number_sort);
+        else
+            arr.sort_ascending();
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="range")
+    {
+        if(tokens.length()<3)
+            return true;
+        string arrname=tokens[0];
+        int start=int(string_to_number(tokens[1]));
+        int end=int(string_to_number(tokens[2]));
+        int step=1;
+        if(tokens.length()>3)
+            step=int(string_to_number(tokens[3]));
+        if(step==0)
+            step=1;
+        string[] arr;
+        if(start<=end)
+        {
+            for(int i=start;i<=end;i+=step)
+                arr.insert_last(string(i));
+        }
+        else
+        {
+            for(int i=start;i>=end;i-=step)
+                arr.insert_last(string(i));
+        }
+        arrays.set(arrname, arr);
+        return true;
+    }
+    if(cmd=="randitem")
+    {
+        if(tokens.length()<2)
+            return true;
+        string arrname=tokens[0];
+        string varname=tokens[1];
+        if(!arrays.exists(arrname))
+            return true;
+        string[] arr;
+        if(!arrays.get(arrname, arr))
+            return true;
+        if(arr.length()==0)
+            return true;
+        int i=random(0,arr.length()-1);
+        si.vars.set(varname,arr[i]);
+        return true;
+    }
+    return false;
+}

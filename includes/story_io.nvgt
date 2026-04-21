@@ -1,0 +1,152 @@
+bool exec_io(story_interpreter@ si, string cmd, string[] tokens)
+{
+    if(cmd=="write")
+    {
+        if(tokens.length()<1)
+            return true;
+        string varname=tokens[0];
+        tokens.remove_at(0);
+        string prompt=string_join(tokens," ");
+        prompt=si.vars.replace_vars(prompt, si.get_locals());
+        if(si.write_mode_enabled)
+            vd.set_disallowed_chars(si.write_chars, si.write_use_only, si.write_message);
+        else
+            vd.set_disallowed_chars("", false, "");
+        string val=vd.input_box("", prompt);
+        bool is_empty=(val=="");
+        if(is_empty)
+        {
+            if(si.write_cancel=="exit")
+            {
+                vd.set_disallowed_chars("", false, "");
+                return false;
+            }
+            if(si.write_cancel=="continue")
+            {
+                vd.set_disallowed_chars("", false, "");
+                return true;
+            }
+            if(si.write_cancel=="loop")
+            {
+                while(val=="")
+                    val=vd.input_box("", prompt);
+            }
+        }
+        si.vars.set(varname, val);
+        vd.set_disallowed_chars("", false, "");
+        return true;
+    }
+    if(cmd=="writemode")
+    {
+        if(tokens.length()==0)
+        {
+            si.write_mode_enabled=false;
+            si.write_chars="";
+            si.write_use_only=false;
+            si.write_message="";
+            si.write_cancel="exit";
+            return true;
+        }
+        dictionary args=parse_named_args(tokens);
+        string[] clean_tokens;
+        for(uint i=0;i<tokens.length();i++)
+        {
+            if(tokens[i].find(":")==-1)
+                clean_tokens.insert_last(tokens[i]);
+        }
+        tokens=clean_tokens;
+        string mode=get_arg_string(args,"cancel",si.write_cancel);
+        mode=mode.lower();
+        if(mode=="exit" || mode=="continue" || mode=="loop")
+            si.write_cancel=mode;
+        if(tokens.length()>0)
+        {
+            si.write_mode_enabled=true;
+            si.write_use_only=false;
+            si.write_chars="";
+            si.write_message="";
+            string type=tokens[0];
+            if(tokens.length()>1)
+            {
+                string charmode=tokens[1].lower();
+                if(charmode=="true" || charmode=="only" || charmode=="allow" || charmode=="on" || charmode=="1")
+                    si.write_use_only=true;
+                else if(charmode=="false" || charmode=="block" || charmode=="deny" || charmode=="off" || charmode=="0")
+                    si.write_use_only=false;
+            }
+            if(tokens.length()>2)
+            {
+                tokens.remove_at(0);
+                tokens.remove_at(0);
+                si.write_message=string_join(tokens," ");
+                si.write_message=si.vars.replace_vars(si.write_message, si.get_locals());
+            }
+            if(type.find("num")!=-1)
+                si.write_chars+="0123456789";
+            if(type.find("let")!=-1)
+                si.write_chars+="abcdefghijklmnopqrstuvwxyz";
+            if(type.find("LET")!=-1)
+                si.write_chars+="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            if(type.find("sim")!=-1)
+                si.write_chars+="!@#$%^&*()[]{};:'\"\\|,.<>?_/+=`~";
+            if(type.find("spc")!=-1)
+                si.write_chars+=" ";
+            if(type=="none")
+                si.write_mode_enabled=false;
+        }
+        return true;
+    }
+    if(cmd=="save")
+    {
+        file f;
+        if(f.open("data/save.dat","w"))
+        {
+            string[] keys=si.vars.vars.get_keys();
+            for(uint i=0;i<keys.length();i++)
+            {
+                string k=keys[i];
+                string v=si.vars.get(k);
+                f.write("var "+k+" "+v);
+            }
+            string[] items=inv.get_keys();
+            for(uint i=0;i<items.length();i++)
+                f.write("item "+items[i]);
+            f.close();
+        }
+        dlgmessage("Story saved.");
+        return true;
+    }
+    if(cmd=="load")
+    {
+        file f;
+        if(!f.open("data/save.dat","r"))
+        {
+            dlgmessage("No save file found.");
+            return true;
+        }
+        si.vars.clear();
+        inv.delete_all();
+        while(!f.eof)
+        {
+            string line=f.read();
+            string[] t=parse_story_tokens(line);
+            if(t.length()==0)
+                continue;
+            if(t[0]=="var")
+            {
+                string value=string_join(t," ",2);
+                si.vars.set(t[1], value);
+            }
+            if(t[0]=="item")
+                inv[t[1]]="1";
+        }
+        f.close();
+        dlgmessage("Story loaded.");
+        return true;
+    }
+    if(cmd=="checkpoint")
+    {
+        return exec_io(si, "save", tokens);
+    }
+    return false;
+}

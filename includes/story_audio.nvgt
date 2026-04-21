@@ -1,0 +1,86 @@
+bool exec_audio(string cmd, string[] tokens)
+{
+    if(cmd=="cutplay")
+    {
+        if(tokens.length()<1)
+            return true;
+        string filename=tokens[0];
+        dictionary args=parse_named_args(tokens,1);
+        bool skippable=get_arg_bool(args,"skippable",true);
+        bool fadeable=get_arg_bool(args,"fadeable",true);
+        int fadetime=int(get_arg_number(args,"fadetime",30));
+        string path=get_sound("*"+filename+"*");
+        dlgplay(path, skippable, fadeable, fadetime);
+        return true;
+    }
+    if(cmd=="play")
+    {
+        if(tokens.length()<1)
+            return true;
+        string filename=tokens[0];
+        dictionary args=parse_named_args(tokens,1);
+        double vol=get_arg_number(args,"volume",0);
+        double pan=get_arg_number(args,"pan",0);
+        if(tokens.length()>1 && tokens[1].find(":")==-1)
+            vol=string_to_number(tokens[1]);
+        if(tokens.length()>2 && tokens[2].find(":")==-1)
+            pan=string_to_number(tokens[2]);
+        p.play_stationary_extended(get_sound("misc/*"+filename+"*"), false, 0, pan, vol, 100, false);
+        return true;
+    }
+    if(cmd=="amb")
+    {
+        if(tokens.length()<1)
+            return true;
+        string filename=tokens[0];
+        dictionary args=parse_named_args(tokens,1);
+        double vol=get_arg_number(args,"volume",0);
+        double pan=get_arg_number(args,"pan",0);
+        if(tokens.length()>1 && tokens[1].find(":")==-1)
+            vol=string_to_number(tokens[1]);
+        if(tokens.length()>2 && tokens[2].find(":")==-1)
+            pan=string_to_number(tokens[2]);
+        sourcepool.destroy_all();
+        sourcepool.play_stationary_extended(get_sound("source/*"+filename+"*"), true, 0, pan, vol, 100, false);
+        return true;
+    }
+    if(cmd=="mus")
+    {
+        if(tokens.length()<1)
+            return true;
+        string filename=tokens[0];
+        dictionary args=parse_named_args(tokens,1);
+        double vol=get_arg_number(args,"volume",0);
+        double pan=get_arg_number(args,"pan",0);
+        if(tokens.length()>1 && tokens[1].find(":")==-1)
+            vol=string_to_number(tokens[1]);
+        if(tokens.length()>2 && tokens[2].find(":")==-1)
+            pan=string_to_number(tokens[2]);
+        muspool.destroy_all();
+        muspool.play_stationary_extended(get_sound("music/*"+filename+"*"), true, 0, pan, vol, 100, false);
+        return true;
+    }
+    if(cmd=="stop")
+    {
+        p.destroy_all();
+        return true;
+    }
+    if(cmd=="ambstop")
+    {
+        sourcepool.destroy_all();
+        return true;
+    }
+    if(cmd=="musstop")
+    {
+        muspool.destroy_all();
+        return true;
+    }
+    if(cmd=="silence")
+    {
+        p.destroy_all();
+        muspool.destroy_all();
+        sourcepool.destroy_all();
+        return true;
+    }
+    return false;
+}

@@ -9,39 +9,6 @@
 
 #include"includes/*.nvgt"
 
-bool break_loop;
-bool continue_loop;
-
-string storytype;
-
-string[] lines;
-
-int current_line;
-
-string menu_choice;
-int last_menu_line;
-int menuindex;
-
-bool dlgsound=true;
-bool in_block_comment = false;
-string wintitle="StoryBuilder";
-string version;
-
-audio_form form;
-custom_menu m;
-dictionary loopvars;
-dictionary loopstart;
-dictionary loopend;
-dictionary arrays;
-dictionary journal;
-dictionary inv;
-dictionary quests;
-file dockfile, dockver;
-instance appstence("sbl");
-story_manager st;
-sound_pool muspool, sourcepool, p, pool, spool, temp;
-virtual_dialogs vd;
-
 void main()
 {
 getver();

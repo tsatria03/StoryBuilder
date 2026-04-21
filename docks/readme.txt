@@ -112,8 +112,8 @@ Executes a previously defined function. Arguments may be passed and will be assi
 return
 
 Stops execution of the current function and returns control to the point where the function was called.
-The return command can also optionally provide a value, and can store the built-in variable to be used later.
-This allows functions to produce results that can be used elsewhere in the script.
+The return command can also optionally provide a value. When a value is returned, it is stored in the built-in variable lastreturn, which can be referenced elsewhere in the script after the function call.
+This allows functions to produce results that can be used by other parts of the story.
 
 Loop Commands
 
@@ -178,6 +178,9 @@ Selects a random item from an array and stores the result in a variable.
 Variable Commands
 
 Variable commands store and manipulate data used throughout the story. Variables may contain text, numbers, or results from player actions.
+
+To reference a variable's value inside text, say, or other output commands, wrap the variable name in angle brackets like <varname>.
+When using a variable in a condition such as if, while, or elseif, use the variable name directly without angle brackets.
 
 write
 
@@ -286,7 +289,7 @@ Combines all values from an array into a single string.
 
 filter
 
-Creates a new array containing only values that match a specified condition or pattern.
+Creates a new array containing only values that exactly match a specified value. The result is stored in a new array.
 
 sort
 
@@ -342,7 +345,7 @@ Pauses script execution for a specified amount of time.
 
 waitkey
 
-Pauses execution until the player presses a key.
+Pauses execution and displays a prompt telling the player to press Enter. Execution resumes once the player presses the Enter key.
 
 Inventory System
 
@@ -382,15 +385,15 @@ Marks a quest as failed.
 
 questcheck
 
-Checks whether a specific quest exists and can trigger additional logic.
+Checks whether a specific quest is active or completed and executes a command if it is. This allows scripts to trigger events or dialog based on quest progress without using separate conditional blocks.
 
 quests
 
-Displays the current quest log.
+Displays the current quest log, listing all active quests by name.
 
 questclear
 
-Removes all quests from the quest system.
+Removes all quests from the quest system, clearing the quest log entirely.
 
 RPG Mechanics
 
@@ -422,24 +425,27 @@ These commands control world navigation and location management.
 
 map
 
-Creates a location menu where each location triggers a specific action.
+Creates an inline location menu where each item has a label and an associated command. When the player selects an item, the corresponding command is executed. The map block must be closed with endmap.
 
 genmap
 
-Generates a randomized world map.
+Generates a randomized world map by selecting locations from a built-in set of location names. The generated map is stored internally and used by the worldmap command.
 
 worldmap
 
-Displays the generated world map and allows the player to navigate between locations.
+Displays the generated world map as a navigable menu. The player can select a location to travel to, save the game, or exit the story. Locations are created using genmap before worldmap is called.
 
 teleport
 
-Moves the player to a different location in the script.
+Moves execution directly to a labeled location in the script. This is equivalent to goto but uses destination-style naming to indicate movement within the story world.
 
 Combat System
 
+These commands implement turn-based combat encounters between the player and enemies.
+
 combat
-Starts a turn-based combat encounter between the player and an enemy.
+
+Starts a turn-based combat encounter. The enemy name, hit points, minimum damage, and maximum damage are provided as arguments. During combat the player can attack, use a potion from their inventory, or attempt to run. The result of the encounter is stored so it can be checked afterward.
 
 Journal System
 
@@ -447,11 +453,11 @@ Journal commands allow the story to store narrative notes, discoveries, or lore 
 
 journaladd
 
-Adds a new entry to the journal.
+Adds an entry to the journal under a named key. The first argument is the key name and the remaining text is the entry content. If an entry with the same key already exists it will be overwritten.
 
 journal
 
-Displays all stored journal entries.
+Displays all stored journal entries in a dialog.
 
 Save System
 
@@ -467,7 +473,7 @@ Loads a previously saved game state.
 
 checkpoint
 
-Creates a quick save point that can be restored later.
+Saves the current game state, identical to the save command. Useful as a semantic marker in scripts to indicate an intended save point rather than a player-triggered save.
 
 Script Import
 

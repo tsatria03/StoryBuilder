@@ -1,0 +1,417 @@
+bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
+{
+    if(cmd=="label")
+    {
+        return true;
+    }
+    if(cmd=="goto")
+    {
+        if(tokens.length()<1)
+            return true;
+        string labelname=tokens[0];
+        int target=-1;
+        for(int i=0;i<int(lines.length());i++)
+        {
+            string[] t=parse_story_tokens(lines[i]);
+            if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
+            {
+                target=i;
+                break;
+            }
+        }
+        if(target!=-1)
+            current_line=target-1;
+        si.skip_advance=true;
+        return true;
+    }
+    if(cmd=="gotoif")
+    {
+        if(tokens.length()<3)
+            return true;
+        string varname=tokens[0];
+        string value=tokens[1];
+        string labelname=tokens[2];
+        if(si.vars.exists(varname))
+        {
+            string v=si.vars.get(varname);
+            if(v==value)
+            {
+                int target=-1;
+                for(int i=0;i<int(lines.length());i++)
+                {
+                    string[] t=parse_story_tokens(lines[i]);
+                    if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
+                    {
+                        target=i;
+                        break;
+                    }
+                }
+                if(target!=-1)
+                    current_line=target-1;
+                si.skip_advance=true;
+            }
+        }
+        return true;
+    }
+    if(cmd=="call")
+    {
+        if(tokens.length()<1)
+            return true;
+        string fname=tokens[0];
+        tokens.remove_at(0);
+        if(!si.functions.exists(fname))
+            return true;
+        dictionary locals;
+        si.localstack.insert_last(locals);
+        si.callstack.insert_last(string(current_line+1));
+        int target=string_to_int(string(si.functions[fname]));
+        if(target < 0 || target >= int(lines.length()))
+            return true;
+        string[] ftokens=parse_story_tokens(lines[target]);
+        for(uint i=0;i<tokens.length();i++)
+        {
+            if(i+2 < ftokens.length())
+            {
+                string argname=ftokens[i+2];
+                si.localstack[si.localstack.length()-1].set(argname, tokens[i]);
+            }
+        }
+        current_line=target+1;
+        si.skip_advance=true;
+        return true;
+    }
+    if(cmd=="return")
+    {
+        string value="";
+        if(tokens.length()>0)
+        {
+            value=string_join(tokens," ");
+            value=si.vars.replace_vars(value, si.get_locals());
+            if(value.starts_with("call "))
+            {
+                string[] ctokens=parse_story_tokens(value);
+                if(ctokens.length()>=2)
+                {
+                    string fname=ctokens[1];
+                    if(si.functions.exists(fname))
+                    {
+                        int target=string_to_int(string(si.functions[fname]));
+                        if(target>=0 && target<int(lines.length()))
+                        {
+                            dictionary locals;
+                            si.localstack.insert_last(locals);
+                            string[] ftokens=parse_story_tokens(lines[target]);
+                            uint maxargs=ctokens.length()>2 ? ctokens.length()-2 : 0;
+                            uint maxparams=ftokens.length()>2 ? ftokens.length()-2 : 0;
+                            uint count=maxargs<maxparams ? maxargs : maxparams;
+                            for(uint i=0;i<count;i++)
+                                si.localstack[si.localstack.length()-1].set(ftokens[i+2], ctokens[i+2]);
+                            int endline=find_endfunction(target);
+                            si.inline_return_mode=true;
+                            si.inline_return_value="";
+                            if(endline>target)
+                                si.run_block(target+1, endline);
+                            si.inline_return_mode=false;
+                            value=si.inline_return_value;
+                            if(si.localstack.length()>0)
+                                si.localstack.remove_last();
+                        }
+                        else
+                        {
+                            value="";
+                        }
+                    }
+                    else
+                    {
+                        value="";
+                    }
+                }
+            }
+            else
+            {
+                value=eval_expr(value);
+            }
+        }
+        if(si.inline_return_mode)
+        {
+            si.inline_return_value=value;
+            return false;
+        }
+        if(si.callstack.length()==0)
+            return true;
+        si.vars.set("lastreturn", value);
+        if(si.localstack.length()>0)
+            si.localstack.remove_last();
+        current_line=string_to_int(si.callstack[si.callstack.length()-1]);
+        si.callstack.remove_last();
+        si.skip_advance=true;
+        return true;
+    }
+    if(cmd=="function")
+    {
+        int depth=1;
+        int scan=current_line+1;
+        while(scan<int(lines.length()))
+        {
+            string[] t=parse_story_tokens(lines[scan]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="function") depth++;
+                if(c=="endfunction")
+                {
+                    depth--;
+                    if(depth==0) break;
+                }
+            }
+            scan++;
+        }
+        if(scan>=int(lines.length()))
+            return true;
+        current_line=scan;
+        return true;
+    }
+    if(cmd=="endfunction")
+    {
+        return true;
+    }
+    if(cmd=="break")
+    {
+        if(si.break_stack.length()>0)
+            si.break_stack[si.break_stack.length()-1]=true;
+        return true;
+    }
+    if(cmd=="continue")
+    {
+        if(si.continue_stack.length()>0)
+            si.continue_stack[si.continue_stack.length()-1]=true;
+        return true;
+    }
+    if(cmd=="for")
+    {
+        if(tokens.length()<3)
+            return true;
+        string varname=tokens[0];
+        int start=int(string_to_number(tokens[1]));
+        int end=int(string_to_number(tokens[2]));
+        int startline=current_line+1;
+        int endline=startline;
+        int depth=1;
+        while(endline<lines.length())
+        {
+            string[] t=parse_story_tokens(lines[endline]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="for") depth++;
+                else if(c=="endfor") depth--;
+                if(depth==0) break;
+            }
+            endline++;
+        }
+        si.continue_stack.push_back(false);
+        si.break_stack.push_back(false);
+        int top=si.continue_stack.length()-1;
+        for(int i=start;i<=end;i++)
+        {
+            si.vars.set(varname,string(i));
+            int result=si.run_block(startline,endline);
+            if(result==2) { if(top>=0) si.break_stack[top]=false; break; }
+            if(result==1) { if(top>=0) si.continue_stack[top]=false; continue; }
+        }
+        if(si.continue_stack.length()>0) si.continue_stack.pop_back();
+        if(si.break_stack.length()>0) si.break_stack.pop_back();
+        current_line=endline;
+        return true;
+    }
+    if(cmd=="foreach")
+    {
+        if(tokens.length()<2)
+            return true;
+        string varname=tokens[0];
+        string arrname=tokens[1];
+        string[] arr;
+        if(!arrays.get(arrname,arr))
+            return true;
+        int startline=current_line+1;
+        int endline=startline;
+        int depth=1;
+        while(endline<lines.length())
+        {
+            string[] t=parse_story_tokens(lines[endline]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="foreach") depth++;
+                else if(c=="endfor") depth--;
+                if(depth==0) break;
+            }
+            endline++;
+        }
+        si.continue_stack.push_back(false);
+        si.break_stack.push_back(false);
+        int top=si.continue_stack.length()-1;
+        for(uint i=0;i<arr.length();i++)
+        {
+            si.vars.set(varname,arr[i]);
+            int result=si.run_block(startline,endline);
+            if(result==2) { if(top>=0) si.break_stack[top]=false; break; }
+            if(result==1) { if(top>=0) si.continue_stack[top]=false; continue; }
+        }
+        if(si.continue_stack.length()>0) si.continue_stack.pop_back();
+        if(si.break_stack.length()>0) si.break_stack.pop_back();
+        current_line=endline;
+        return true;
+    }
+    if(cmd=="endfor")
+    {
+        return true;
+    }
+    if(cmd=="while")
+    {
+        string key=string(current_line);
+        int endline;
+        if(!si.loopend.exists(key))
+        {
+            int scan=current_line+1;
+            int depth=1;
+            endline=current_line;
+            while(scan<int(lines.length()))
+            {
+                string[] t=parse_story_tokens(lines[scan]);
+                if(t.length()>0)
+                {
+                    string c=t[0].lower();
+                    if(c=="while") depth++;
+                    else if(c=="endwhile")
+                    {
+                        depth--;
+                        if(depth==0) { endline=scan; break; }
+                    }
+                }
+                scan++;
+            }
+            si.loopend[key]=string(endline);
+            si.loopstart[string(endline)]=key;
+        }
+        endline=string_to_int(string(si.loopend[key]));
+        string condition=string_join(tokens," ");
+        condition=si.vars.replace_vars(condition, si.get_locals());
+        bool result=false;
+        if(condition.lower()=="true") result=true;
+        else if(condition.lower()=="false") result=false;
+        else result=si.evaluate_condition(condition);
+        if(result)
+        {
+            string stack_key="__while_active_"+key;
+            if(!si.loopvars.exists(stack_key))
+            {
+                si.continue_stack.push_back(false);
+                si.break_stack.push_back(false);
+                si.loopvars[stack_key]="1";
+            }
+        }
+        else
+        {
+            string stack_key="__while_active_"+key;
+            if(si.loopvars.exists(stack_key))
+            {
+                si.loopvars.delete(stack_key);
+                if(si.continue_stack.length()>0) si.continue_stack.remove_at(si.continue_stack.length()-1);
+                if(si.break_stack.length()>0) si.break_stack.remove_at(si.break_stack.length()-1);
+            }
+            current_line=endline;
+            si.skip_advance=true;
+        }
+        return true;
+    }
+    if(cmd=="endwhile")
+    {
+        string key=string(current_line);
+        if(!si.loopstart.exists(key))
+            return true;
+        int startline=string_to_int(string(si.loopstart[key]));
+        string start_key=string(startline);
+        string stack_key="__while_active_"+start_key;
+        string[] t=parse_story_tokens(lines[startline]);
+        if(t.length()==0)
+            return true;
+        t.remove_at(0);
+        string condition=string_join(t," ");
+        condition=si.vars.replace_vars(condition, si.get_locals());
+        bool result=false;
+        if(condition.lower()=="true") result=true;
+        else if(condition.lower()=="false") result=false;
+        else result=si.evaluate_condition(condition);
+        int top=si.continue_stack.length()-1;
+        if(top>=0)
+        {
+            if(si.break_stack[top])
+            {
+                si.break_stack[top]=false;
+                if(si.loopvars.exists(stack_key)) si.loopvars.delete(stack_key);
+                si.continue_stack.remove_at(top);
+                si.break_stack.remove_at(top);
+                si.loopstart.delete(key);
+                si.loopend.delete(string(startline));
+                return true;
+            }
+            if(si.continue_stack[top])
+            {
+                si.continue_stack[top]=false;
+                current_line=startline;
+                si.skip_advance=true;
+                return true;
+            }
+        }
+        if(result)
+        {
+            current_line=startline;
+            si.skip_advance=true;
+        }
+        else
+        {
+            if(si.loopvars.exists(stack_key)) si.loopvars.delete(stack_key);
+            if(si.continue_stack.length()>0) si.continue_stack.remove_at(si.continue_stack.length()-1);
+            if(si.break_stack.length()>0) si.break_stack.remove_at(si.break_stack.length()-1);
+            si.loopstart.delete(key);
+            si.loopend.delete(string(startline));
+        }
+        return true;
+    }
+    if(cmd=="repeat")
+    {
+        if(tokens.length()<1)
+            return true;
+        int count=int(string_to_number(tokens[0]));
+        int startline=current_line+1;
+        int endline=startline;
+        int depth=1;
+        while(endline<int(lines.length()))
+        {
+            string[] t=parse_story_tokens(lines[endline]);
+            if(t.length()>0)
+            {
+                string c=t[0].lower();
+                if(c=="repeat") depth++;
+                else if(c=="endrepeat") depth--;
+                if(depth==0) break;
+            }
+            endline++;
+        }
+        si.continue_stack.push_back(false);
+        si.break_stack.push_back(false);
+        int top=si.continue_stack.length()-1;
+        for(int r=0;r<count;r++)
+        {
+            int result=si.run_block(startline,endline);
+            if(result==2) { if(top>=0) si.break_stack[top]=false; break; }
+            if(result==1) { if(top>=0) si.continue_stack[top]=false; continue; }
+        }
+        if(si.continue_stack.length()>0) si.continue_stack.pop_back();
+        if(si.break_stack.length()>0) si.break_stack.pop_back();
+        current_line=endline;
+        return true;
+    }
+    return false;
+}

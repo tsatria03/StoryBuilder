@@ -32,23 +32,28 @@ function createwheel
 
     write wheelname Enter a name for your wheel.
     if wheelname == "" return
+    endif
 
     write wheelitems Type wheel items separated by dashes. Example: pizza--burger--sushi
     if wheelitems == "" return
+    endif
 
     array <wheelname> <wheelitems> --
 
     write spinspeed Enter starting spin speed. Example: 40
     if spinspeed == ""
-set spinspeed 40
+        set spinspeed 40
+    endif
 
     write slowdown Enter slowdown amount per tick. Example: 20
     if slowdown == ""
-set slowdown 20
+        set slowdown 20
+    endif
 
     write spinticks Enter number of spin ticks. Example: 10
     if spinticks == ""
-set spinticks 10
+        set spinticks 10
+    endif
 
     set haswheel 1
 

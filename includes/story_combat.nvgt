@@ -1,0 +1,127 @@
+bool exec_combat(story_interpreter@ si, string cmd, string[] tokens)
+{
+    if(cmd=="damage")
+    {
+        if(tokens.length()<1)
+            return true;
+        string expr=string_join(tokens," ");
+        expr=eval_expr(expr);
+        int dmg=int(string_to_number(expr));
+        si.playerhp-=dmg;
+        if(si.playerhp<0)
+            si.playerhp=0;
+        if(si.playerhp<=0)
+            return si.execute("goto game_over");
+        return true;
+    }
+    if(cmd=="heal")
+    {
+        if(tokens.length()<1)
+            return true;
+        string expr=string_join(tokens," ");
+        expr=eval_expr(expr);
+        int hp=int(string_to_number(expr));
+        si.playerhp+=hp;
+        if(si.playerhp>si.playermaxhp)
+            si.playerhp=si.playermaxhp;
+        return true;
+    }
+    if(cmd=="hp")
+    {
+        dlgmessage("Health: "+string(si.playerhp)+"/"+string(si.playermaxhp));
+        return true;
+    }
+    if(cmd=="xp")
+    {
+        if(tokens.length()<1)
+            return true;
+        string expr=string_join(tokens," ");
+        expr=eval_expr(expr);
+        int gain=int(string_to_number(expr));
+        si.playerxp+=gain;
+        int need=si.playerlevel*20;
+        if(si.playerxp>=need)
+        {
+            si.playerxp-=need;
+            si.playerlevel++;
+            si.playermaxhp+=5;
+            si.playerhp=si.playermaxhp;
+        }
+        return true;
+    }
+    if(cmd=="level")
+    {
+        dlgmessage("Level "+string(si.playerlevel)+"  XP "+string(si.playerxp));
+        return true;
+    }
+    if(cmd=="combat")
+    {
+        last_menu_line = current_line;
+        if(tokens.length()<4)
+            return true;
+        string enemy=tokens[0];
+        int enemyhp=int(string_to_number(tokens[1]));
+        int mindmg=int(string_to_number(tokens[2]));
+        int maxdmg=int(string_to_number(tokens[3]));
+        si.combatwin=false;
+        dlgmessage("A "+enemy+" appears!");
+        while(enemyhp>0 && si.playerhp>0)
+        {
+            dlgmessage(enemy+" HP: "+string(enemyhp));
+            dlgmessage("Your HP: "+string(si.playerhp));
+            setupmenu(false);
+            m.intro_text="Choose your action";
+            m.add_item("Attack");
+            m.add_item("Use potion");
+            m.add_item("Run");
+            int choice=m.run();
+            if(choice==1)
+            {
+                int dmg=random(1,5);
+                dlgmessage("You deal "+string(dmg)+" damage.");
+                enemyhp-=dmg;
+            }
+            if(choice==2)
+            {
+                if(inv.exists("potion"))
+                {
+                    inv.delete("potion");
+                    int heal=5;
+                    si.playerhp+=heal;
+                    if(si.playerhp>si.playermaxhp)
+                        si.playerhp=si.playermaxhp;
+                    dlgmessage("You drink a potion.");
+                }
+                else
+                {
+                    dlgmessage("You have no potion.");
+                }
+            }
+            if(choice==3)
+            {
+                dlgmessage("You escape.");
+                si.combatwin=false;
+                return true;
+            }
+            if(enemyhp<=0)
+                break;
+            int edmg=random(mindmg,maxdmg);
+            si.playerhp-=edmg;
+            dlgmessage(enemy+" hits you for "+string(edmg));
+            if(si.playerhp<=0)
+                break;
+        }
+        if(si.playerhp<=0)
+        {
+            dlgmessage("You were defeated.");
+            si.combatwin=false;
+        }
+        else
+        {
+            dlgmessage("You defeated the "+enemy);
+            si.combatwin=true;
+        }
+        return true;
+    }
+    return false;
+}

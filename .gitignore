@@ -1,9 +1,7 @@
-*.mp3
-*.ogg
-*.wav
 *.ini
-
 New File*.txt
 
+data/stories/*/assets/
 lib/
 releases/
+sounds/
