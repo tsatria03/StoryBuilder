@@ -28,28 +28,25 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
     {
         if(tokens.length()<3)
             return true;
-        string varname=tokens[0];
-        string value=tokens[1];
-        string labelname=tokens[2];
-        if(si.vars.exists(varname))
+        string labelname=tokens[tokens.length()-1];
+        tokens.remove_last();
+        string condition=string_join(tokens," ");
+        condition=si.vars.replace_vars(condition, si.get_locals());
+        if(si.evaluate_condition(condition))
         {
-            string v=si.vars.get(varname);
-            if(v==value)
+            int target=-1;
+            for(int i=0;i<int(lines.length());i++)
             {
-                int target=-1;
-                for(int i=0;i<int(lines.length());i++)
+                string[] t=parse_story_tokens(lines[i]);
+                if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
                 {
-                    string[] t=parse_story_tokens(lines[i]);
-                    if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
-                    {
-                        target=i;
-                        break;
-                    }
+                    target=i;
+                    break;
                 }
-                if(target!=-1)
-                    current_line=target-1;
-                si.skip_advance=true;
             }
+            if(target!=-1)
+                current_line=target-1;
+            si.skip_advance=true;
         }
         return true;
     }
@@ -60,13 +57,17 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
         string fname=tokens[0];
         tokens.remove_at(0);
         if(!si.functions.exists(fname))
+        {
+            dlgmessage("Error: function '"+fname+"' not found.");
+            return true;
+        }
+        int target=string_to_int(string(si.functions[fname]));
+        if(target < 0 || target >= int(lines.length()))
             return true;
         dictionary locals;
         si.localstack.insert_last(locals);
         si.callstack.insert_last(string(current_line+1));
-        int target=string_to_int(string(si.functions[fname]));
-        if(target < 0 || target >= int(lines.length()))
-            return true;
+        si.if_depth_stack.insert_last(si.if_result_stack.length());
         string[] ftokens=parse_story_tokens(lines[target]);
         for(uint i=0;i<tokens.length();i++)
         {
@@ -142,6 +143,13 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
         si.vars.set("lastreturn", value);
         if(si.localstack.length()>0)
             si.localstack.remove_last();
+        if(si.if_depth_stack.length()>0)
+        {
+            int saved_depth=si.if_depth_stack[si.if_depth_stack.length()-1];
+            si.if_depth_stack.remove_last();
+            while(int(si.if_result_stack.length()) > saved_depth)
+                si.if_result_stack.remove_last();
+        }
         current_line=string_to_int(si.callstack[si.callstack.length()-1]);
         si.callstack.remove_last();
         si.skip_advance=true;

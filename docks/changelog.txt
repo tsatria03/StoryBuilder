@@ -1,4 +1,9 @@
+New in 1.2.
+Fixed a bug where calling a function that does not exist would silently do nothing. An error dialog is now shown with the function name.
+Fixed a bug where gotoif only performed string comparisons, causing numeric comparisons to fail. It now supports the same full condition syntax as the if command.
+Fixed a bug where calling a function with an invalid target line would push onto the local and call stacks before the check, leaving them permanently unbalanced.
 New in 1.1.
+Fixed a bug where returning from a function that contained unclosed if blocks would leave leftover entries on the if result stack, causing else and elseif to behave incorrectly in subsequent calls.
 Fixed a bug where arrays, inventory, quests, and journal data were being stored in global dictionaries by the command handlers but looked up in separate class member dictionaries by other commands such as spin. This caused the spin command to always find an empty wheel, and could have affected other commands that cross the boundary between class methods and free functions.
 Improved the readme documentation for several commands, including return, filter, map, genmap, worldmap, teleport, waitkey, combat, questcheck, questclear, journaladd, journal, and checkpoint. Descriptions now accurately reflect how each command works and what arguments they accept.
 Updated the story loader to handle all line ending styles, including Windows CRLF, Unix LF, and old Mac CR. Story files can now be written on any platform.

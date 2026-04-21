@@ -37,6 +37,7 @@ array<bool> continue_stack;
 array<bool> break_stack;
 array<bool> if_result_stack;
 array<string> callstack;
+array<int> if_depth_stack;
 array<int> while_stack;
 array<dictionary> localstack;
 
