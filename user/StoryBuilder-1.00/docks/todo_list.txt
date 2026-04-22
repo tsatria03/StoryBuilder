@@ -1,0 +1,8 @@
+####These are the things that need to be finished for future versions of the app.
+
+****Unfinished. Fix asindments of local variables for functions.
+
+
+##These are the things that are already finished from earlier versions of the app.
+
+**Finished. Make the core engine for this app.

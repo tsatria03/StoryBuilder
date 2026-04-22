@@ -1,4 +1,10 @@
 New in 1.2.
+Fixed a bug where endfunction did not return execution to the caller when no explicit return command was used, causing the interpreter to fall through into code after the function block.
+Fixed a bug where var, set, add, sub, mul, and div always wrote to global variables even when inside a function. These commands now correctly write to the local scope when a local variable with that name exists. var always creates locals when inside a function.
+Fixed a bug where local variables were treated as global ones inside functions, causing function argument modifications to bleed into global scope.
+Fixed a bug where empty string comparisons in if, elseif, while, endwhile, and gotoif conditions always evaluated to false. The tokenizer was silently dropping empty quoted strings before the condition evaluator could see them. These commands now read directly from the raw script line to preserve quoted empty strings intact.
+Fixed a bug where the waitkey command was not correctly absorbing buffered text before displaying, causing text inside if blocks to be swallowed instead of shown.
+Updated the password generator story to enforce a minimum length of 8 and a maximum length of 256 characters, displaying a message and returning to the menu if the entered value is out of range.
 Fixed a bug where calling a function that does not exist would silently do nothing. An error dialog is now shown with the function name.
 Fixed a bug where gotoif only performed string comparisons, causing numeric comparisons to fail. It now supports the same full condition syntax as the if command.
 Fixed a bug where calling a function with an invalid target line would push onto the local and call stacks before the check, leaving them permanently unbalanced.

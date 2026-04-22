@@ -29,9 +29,11 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
         if(tokens.length()<3)
             return true;
         string labelname=tokens[tokens.length()-1];
-        tokens.remove_last();
-        string condition=string_join(tokens," ");
-        condition=si.vars.replace_vars(condition, si.get_locals());
+        string raw=lines[current_line];
+        raw=si.vars.replace_vars(raw, si.get_locals());
+        raw=trim(raw);
+        int labelpos=raw.find_last(" "+labelname);
+        string condition=labelpos!=-1 ? trim(raw.substr(7, labelpos-7)) : string_join(tokens," ");
         if(si.evaluate_condition(condition))
         {
             int target=-1;
@@ -181,6 +183,20 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
     }
     if(cmd=="endfunction")
     {
+        if(si.callstack.length()==0)
+            return true;
+        if(si.localstack.length()>0)
+            si.localstack.remove_last();
+        if(si.if_depth_stack.length()>0)
+        {
+            int saved_depth=si.if_depth_stack[si.if_depth_stack.length()-1];
+            si.if_depth_stack.remove_last();
+            while(int(si.if_result_stack.length()) > saved_depth)
+                si.if_result_stack.remove_last();
+        }
+        current_line=string_to_int(si.callstack[si.callstack.length()-1]);
+        si.callstack.remove_last();
+        si.skip_advance=true;
         return true;
     }
     if(cmd=="break")
@@ -303,8 +319,10 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
             si.loopstart[string(endline)]=key;
         }
         endline=string_to_int(string(si.loopend[key]));
-        string condition=string_join(tokens," ");
-        condition=si.vars.replace_vars(condition, si.get_locals());
+        string raw=lines[current_line];
+        raw=si.vars.replace_vars(raw, si.get_locals());
+        raw=trim(raw);
+        string condition=raw.length()>6 ? trim(raw.substr(6)) : string_join(tokens," ");
         bool result=false;
         if(condition.lower()=="true") result=true;
         else if(condition.lower()=="false") result=false;
@@ -341,12 +359,12 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
         int startline=string_to_int(string(si.loopstart[key]));
         string start_key=string(startline);
         string stack_key="__while_active_"+start_key;
-        string[] t=parse_story_tokens(lines[startline]);
-        if(t.length()==0)
+        string raw=lines[startline];
+        raw=si.vars.replace_vars(raw, si.get_locals());
+        raw=trim(raw);
+        string condition=raw.length()>6 ? trim(raw.substr(6)) : "";
+        if(condition=="")
             return true;
-        t.remove_at(0);
-        string condition=string_join(t," ");
-        condition=si.vars.replace_vars(condition, si.get_locals());
         bool result=false;
         if(condition.lower()=="true") result=true;
         else if(condition.lower()=="false") result=false;

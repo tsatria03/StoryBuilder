@@ -1,0 +1,22 @@
+title Play Order Test
+
+function notify audio msg
+    text <msg>
+    play <audio>
+endfunction
+
+function notify_sound_first audio msg
+    play <audio>
+    text <msg>
+endfunction
+
+text Test 1: Text before sound. Dialog shows first, sound plays after dismissing.
+call notify achievement1.ogg "Text came first!"
+
+wait 500
+
+text Test 2: Sound before text. Sound and dialog overlap.
+call notify_sound_first achievement1.ogg "Sound came first!"
+
+text Done.
+end

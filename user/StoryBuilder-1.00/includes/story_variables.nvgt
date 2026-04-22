@@ -1,0 +1,44 @@
+class story_variables
+{
+dictionary vars;
+void set(string key, string value)
+{
+vars[key]=value;
+}
+string get(string key)
+{
+if(vars.exists(key))
+return string(vars[key]);
+return "";
+}
+bool exists(string key)
+{
+return vars.exists(key);
+}
+void clear()
+{
+vars.delete_all();
+}
+string replace_vars(string text, dictionary@ locals=null)
+{
+string result=text;
+if(locals !is null)
+{
+string[] lkeys=locals.get_keys();
+for(uint i=0;i<lkeys.length();i++)
+{
+string token="<"+lkeys[i]+">";
+string value=string(locals[lkeys[i]]);
+result=string_replace(result,token,value,true);
+}
+}
+string[] keys=vars.get_keys();
+for(uint i=0;i<keys.length();i++)
+{
+string token="<"+keys[i]+">";
+string value=string(vars[keys[i]]);
+result=string_replace(result,token,value,true);
+}
+return result;
+}
+}

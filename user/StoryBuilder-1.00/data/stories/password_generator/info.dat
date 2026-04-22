@@ -7,7 +7,7 @@ function main
 
 array pass_types Numbers,Letters,Numbers+Letters,Symbols,Numbers+Symbols,Letters+Symbols,All
 
-label loop_start
+while true
 
     menu pass_types "Choose password type."
     set passtype <menu_choice>
@@ -15,17 +15,11 @@ label loop_start
     write passlen "Enter password length:"
 
     if passlen == ""
-        goto loop_start
+        continue
     endif
 
-    var passlen_num <passlen>
-
-    if passlen_num < 8
-        text Password length must be at least 8 characters.
-        goto loop_start
-    elseif passlen_num > 256
-        text Password length cannot exceed 256 characters.
-        goto loop_start
+    if passlen <= 0
+        continue
     endif
 
     while true
@@ -34,13 +28,13 @@ label loop_start
 
         choice "What would you like to do?"
             "Generate again" continue
-            "Change settings" goto loop_start
+            "Change settings" break
             "Exit generator" end
         endchoice
 
     endwhile
 
-goto loop_start
+endwhile
 
 return
 endfunction
