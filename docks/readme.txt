@@ -229,6 +229,12 @@ menu
 
 Creates a menu using items stored inside an array.
 
+menumode
+
+Configures how menu and choice commands handle the player pressing escape to cancel.
+This command must be called before menu or choice to take effect. The setting persists until changed.
+Supported cancel modes are: continue, which is the default and moves on with menuindex set to zero; loop, which re-shows the menu until the player makes a selection; exit, which ends the story; return, which returns from the current function; and goto followed by a label name, which jumps to that label.
+
 menuindex
 
 Stores the numeric position of the selected menu item.

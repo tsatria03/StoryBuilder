@@ -9,6 +9,7 @@ array pass_types Numbers,Letters,Numbers+Letters,Symbols,Numbers+Symbols,Letters
 
 label loop_start
 
+    menumode cancel:exit
     menu pass_types "Choose password type."
     set passtype <menu_choice>
 
@@ -32,6 +33,7 @@ label loop_start
 
         call genpassword
 
+        menumode cancel:goto loop_start
         choice "What would you like to do?"
             "Generate again" continue
             "Change settings" goto loop_start

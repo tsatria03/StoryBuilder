@@ -7,6 +7,8 @@ text Welcome to the dynamic wheel spinner.
 
 set haswheel 0
 
+menumode cancel:exit
+
 while true
 
     if haswheel == 0

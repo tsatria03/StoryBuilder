@@ -1,5 +1,62 @@
+bool apply_menu_cancel(story_interpreter@ si, string prompt, string[] arr)
+{
+    string mode = si.menu_cancel;
+    if(mode=="loop")
+    {
+        int result=-1;
+        while(result<=0 || result>int(arr.length()))
+        {
+            setupmenu(false);
+            for(uint i=0;i<arr.length();i++)
+                m.add_item(arr[i]);
+            m.intro_text=prompt;
+            result=m.run();
+        }
+        si.vars.set("menuindex",string(result));
+        si.vars.set("menu_choice",arr[result-1]);
+        return true;
+    }
+    if(mode=="exit")
+        return false;
+    if(mode=="return")
+        return si.execute("return");
+    if(mode.starts_with("goto "))
+        return si.execute(mode);
+    // default: continue
+    si.vars.set("menuindex","0");
+    si.vars.set("menu_choice","");
+    return true;
+}
+
 bool exec_menus(story_interpreter@ si, string cmd, string[] tokens)
 {
+    if(cmd=="menumode")
+    {
+        if(tokens.length()==0)
+        {
+            si.menu_cancel="continue";
+            return true;
+        }
+        string mode="continue";
+        for(uint i=0;i<tokens.length();i++)
+        {
+            int colon=tokens[i].find(":");
+            if(colon==-1) continue;
+            string key=tokens[i].substr(0,colon).lower();
+            string val=tokens[i].substr(colon+1).lower();
+            if(key=="cancel")
+            {
+                if(val=="goto" && i+1 < tokens.length())
+                    mode="goto "+tokens[i+1];
+                else
+                    mode=val;
+                break;
+            }
+        }
+        if(mode=="exit" || mode=="continue" || mode=="loop" || mode=="return" || mode.starts_with("goto "))
+            si.menu_cancel=mode;
+        return true;
+    }
     if(cmd=="menu")
     {
         last_menu_line = current_line;
@@ -18,12 +75,8 @@ bool exec_menus(story_interpreter@ si, string cmd, string[] tokens)
             m.add_item(arr[i]);
         m.intro_text=prompt;
         int result=m.run();
-        if(result<=0 || result>arr.length())
-        {
-            si.vars.set("menuindex","0");
-            si.vars.set("menu_choice","");
-            return true;
-        }
+        if(result<=0 || result>int(arr.length()))
+            return apply_menu_cancel(si, prompt, arr);
         si.vars.set("menuindex",string(result));
         string choice=arr[result-1];
         si.vars.set("menu_choice", choice);
@@ -154,7 +207,15 @@ bool exec_menus(story_interpreter@ si, string cmd, string[] tokens)
             return cont;
         }
         if(result<=0)
-            return false;
+        {
+            current_line=endline;
+            si.skip_advance=true;
+            if(si.menu_cancel=="exit") return false;
+            if(si.menu_cancel=="return") return si.execute("return");
+            if(si.menu_cancel.starts_with("goto ")) return si.execute(si.menu_cancel);
+            // loop and continue both just move past the choice block
+            return true;
+        }
         current_line=endline;
         si.skip_advance=true;
         return true;

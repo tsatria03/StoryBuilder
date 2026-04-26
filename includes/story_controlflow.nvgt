@@ -10,23 +10,16 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
             return true;
         string labelname=tokens[0];
         int target=-1;
-        for(int i=0;i<int(lines.length());i++)
-        {
-            string[] t=parse_story_tokens(lines[i]);
-            if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
-            {
-                target=i;
-                break;
-            }
-        }
+        if(si.parser.labels.exists(labelname))
+            target=string_to_int(string(si.parser.labels[labelname]));
         if(target!=-1)
         {
             current_line=target-1;
             int baseline=si.if_depth_stack.length()>0 ? int(si.if_depth_stack[si.if_depth_stack.length()-1]) : 0;
             while(int(si.if_result_stack.length())>baseline)
                 si.if_result_stack.remove_last();
+            si.skip_advance=true;
         }
-        si.skip_advance=true;
         return true;
     }
     if(cmd=="gotoif")
@@ -42,23 +35,16 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
         if(si.evaluate_condition(condition))
         {
             int target=-1;
-            for(int i=0;i<int(lines.length());i++)
-            {
-                string[] t=parse_story_tokens(lines[i]);
-                if(t.length()>1 && t[0].lower()=="label" && t[1]==labelname)
-                {
-                    target=i;
-                    break;
-                }
-            }
+            if(si.parser.labels.exists(labelname))
+                target=string_to_int(string(si.parser.labels[labelname]));
             if(target!=-1)
             {
                 current_line=target-1;
                 int baseline=si.if_depth_stack.length()>0 ? int(si.if_depth_stack[si.if_depth_stack.length()-1]) : 0;
                 while(int(si.if_result_stack.length())>baseline)
                     si.if_result_stack.remove_last();
+                si.skip_advance=true;
             }
-            si.skip_advance=true;
         }
         return true;
     }
@@ -212,13 +198,87 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
     if(cmd=="break")
     {
         if(si.break_stack.length()>0)
+        {
             si.break_stack[si.break_stack.length()-1]=true;
+            int depth=1;
+            int scan=current_line+1;
+            while(scan < int(lines.length()))
+            {
+                string[] t=parse_story_tokens(lines[scan]);
+                if(t.length()>0)
+                {
+                    string c=t[0].lower();
+                    if(c=="while"||c=="for"||c=="foreach"||c=="repeat") depth++;
+                    else if(c=="endwhile"||c=="endfor"||c=="endrepeat")
+                    {
+                        depth--;
+                        if(depth==0)
+                        {
+                            int if_pops=0;
+                            int inner=0;
+                            for(int s=current_line+1;s<scan;s++)
+                            {
+                                string[] st=parse_story_tokens(lines[s]);
+                                if(st.length()>0)
+                                {
+                                    string sc=st[0].lower();
+                                    if(sc=="if") inner++;
+                                    else if(sc=="endif") { if(inner>0) inner--; else if_pops++; }
+                                }
+                            }
+                            while(if_pops>0 && si.if_result_stack.length()>0)
+                            { si.if_result_stack.remove_last(); if_pops--; }
+                            current_line=scan-1;
+                            break;
+                        }
+                    }
+                }
+                scan++;
+            }
+        }
         return true;
     }
     if(cmd=="continue")
     {
         if(si.continue_stack.length()>0)
+        {
             si.continue_stack[si.continue_stack.length()-1]=true;
+            int depth=1;
+            int scan=current_line+1;
+            while(scan < int(lines.length()))
+            {
+                string[] t=parse_story_tokens(lines[scan]);
+                if(t.length()>0)
+                {
+                    string c=t[0].lower();
+                    if(c=="while"||c=="for"||c=="foreach"||c=="repeat") depth++;
+                    else if(c=="endwhile"||c=="endfor"||c=="endrepeat")
+                    {
+                        depth--;
+                        if(depth==0)
+                        {
+                            int if_pops=0;
+                            int inner=0;
+                            for(int s=current_line+1;s<scan;s++)
+                            {
+                                string[] st=parse_story_tokens(lines[s]);
+                                if(st.length()>0)
+                                {
+                                    string sc=st[0].lower();
+                                    if(sc=="if") inner++;
+                                    else if(sc=="endif") { if(inner>0) inner--; else if_pops++; }
+                                }
+                            }
+                            while(if_pops>0 && si.if_result_stack.length()>0)
+                            { si.if_result_stack.remove_last(); if_pops--; }
+                            current_line=scan-1;
+                            break;
+                        }
+                    }
+                }
+                scan++;
+            }
+        }
         return true;
     }
     if(cmd=="for")

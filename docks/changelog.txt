@@ -1,4 +1,5 @@
 New in 1.2.
+Added the menumode command, which sets the cancel behavior for all subsequent menu and choice commands. Supported modes are continue (default), loop (re-show menu until a selection is made), exit (end the story), return (return from the current function), and goto label (jump to a named label). This mirrors the existing writemode cancel setting.
 Fixed a bug where endfunction did not return execution to the caller when no explicit return command was used, causing the interpreter to fall through into code after the function block.
 Fixed a bug where var, set, add, sub, mul, and div always wrote to global variables even when inside a function. These commands now correctly write to the local scope when a local variable with that name exists. var always creates locals when inside a function.
 Fixed a bug where local variables were treated as global ones inside functions, causing function argument modifications to bleed into global scope.

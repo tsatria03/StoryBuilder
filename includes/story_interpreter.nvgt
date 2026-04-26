@@ -9,6 +9,8 @@ bool write_use_only = false;
 string write_message = "";
 bool write_mode_enabled = false;
 
+string menu_cancel = "continue";
+
 bool inline_return_mode = false;
 string inline_return_value = "";
 string last_return_value;
@@ -328,7 +330,7 @@ if(cmd=="length" || cmd=="array" || cmd=="push" || cmd=="pop" || cmd=="shuffle" 
    cmd=="pick" || cmd=="remove" || cmd=="remove_first" || cmd=="remove_last" ||
    cmd=="join" || cmd=="filter" || cmd=="sort" || cmd=="range" || cmd=="randitem")
     return exec_arrays(@this, cmd, tokens);
-if(cmd=="menu" || cmd=="menuindex" || cmd=="menucom" || cmd=="question" || cmd=="answer" ||
+if(cmd=="menu" || cmd=="menumode" || cmd=="menuindex" || cmd=="menucom" || cmd=="question" || cmd=="answer" ||
    cmd=="choice" || cmd=="randomchoice" || cmd=="map" || cmd=="worldmap")
     return exec_menus(@this, cmd, tokens);
 if(cmd=="wait")

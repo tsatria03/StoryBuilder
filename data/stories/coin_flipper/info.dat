@@ -11,6 +11,8 @@ function main
 
 text Welcome to the coin flipper.
 
+menumode cancel:exit
+
 while true
     choice "What do you want to do?"
         "Flip a coin" call flipcoin

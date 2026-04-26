@@ -12,17 +12,23 @@ remove mod_values 0
 
 while true
 
-    // Choose dice type
+    // Choose dice type - escape exits story
+    menumode cancel:exit
     menu dice_types "Choose the type of dice to roll."
     set sides <menu_choice>
 
-    // Choose count
+    // Choose count - escape returns to dice type selection
+    menumode cancel:continue
     menu dice_counts "How many dice do you want to roll?"
+    if menuindex == 0
+        continue
+    endif
     set count <menu_choice>
 
     set modifier 0
 
     // Modifier choice
+    menumode cancel:loop
     choice "Do you want to use a modifier?"
         "Yes" call choosemodifier
         "No" set modifier 0
@@ -59,7 +65,9 @@ endfunction
 
 function choosemodifier
 
+    menumode cancel:return
     menu mod_values "Choose a modifier."
+    menumode cancel:loop
     set modifier <menu_choice>
 
     return
