@@ -107,7 +107,10 @@ bool evaluate_condition(string condition)
             string value = tokens[0];
             tokens.remove_at(0);
             string varvalue = "";
-            if(vars.exists(varname))
+            dictionary@ lcls = get_locals();
+            if(lcls !is null && lcls.exists(varname))
+                varvalue = string(lcls[varname]);
+            else if(vars.exists(varname))
                 varvalue = vars.get(varname);
             varvalue = strip_quotes(varvalue);
             value = strip_quotes(value);

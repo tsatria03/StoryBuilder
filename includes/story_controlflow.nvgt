@@ -20,7 +20,12 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
             }
         }
         if(target!=-1)
+        {
             current_line=target-1;
+            int baseline=si.if_depth_stack.length()>0 ? int(si.if_depth_stack[si.if_depth_stack.length()-1]) : 0;
+            while(int(si.if_result_stack.length())>baseline)
+                si.if_result_stack.remove_last();
+        }
         si.skip_advance=true;
         return true;
     }
@@ -47,7 +52,12 @@ bool exec_controlflow(story_interpreter@ si, string cmd, string[] tokens)
                 }
             }
             if(target!=-1)
+            {
                 current_line=target-1;
+                int baseline=si.if_depth_stack.length()>0 ? int(si.if_depth_stack[si.if_depth_stack.length()-1]) : 0;
+                while(int(si.if_result_stack.length())>baseline)
+                    si.if_result_stack.remove_last();
+            }
             si.skip_advance=true;
         }
         return true;
