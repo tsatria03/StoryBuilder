@@ -33,7 +33,7 @@ label loop_start
 
         call genpassword
 
-        menumode cancel:goto loop_start
+        menumode cancel:exit
         choice "What would you like to do?"
             "Generate again" continue
             "Change settings" goto loop_start

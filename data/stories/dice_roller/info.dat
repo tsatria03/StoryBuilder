@@ -49,6 +49,7 @@ while true
         endif
 
         // What next
+        menumode cancel:exit
         choice "What would you like to do?"
             "Roll again" continue
             "Change dice" break
